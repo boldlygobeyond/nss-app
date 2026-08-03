@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: hsl(220 20% 97%);
+  --foreground: hsl(222 47% 11%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(222 47% 11%);
+  --primary: hsl(183 100% 34%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(220 14% 96%);
+  --secondary-foreground: hsl(222 47% 11%);
+  --muted: hsl(220 14% 96%);
+  --muted-foreground: hsl(220 9% 46%);
+  --accent: hsl(241 71% 69%);
+  --accent-foreground: hsl(0 0% 100%);
+  --destructive: hsl(0 84.2% 60.2%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --border: hsl(220 13% 91%);
+  --input: hsl(220 13% 91%);
+  --ring: hsl(241 69% 68%);
+}
+
+.dark {
+  --background: hsl(228 56% 6%);
+  --foreground: hsl(0 0% 95%);
+  --card: hsl(222 47% 9%);
+  --card-foreground: hsl(0 0% 95%);
+  --primary: hsl(183 100% 34%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(222 30% 14%);
+  --secondary-foreground: hsl(0 0% 95%);
+  --muted: hsl(222 30% 14%);
+  --muted-foreground: hsl(220 9% 60%);
+  --accent: hsl(241 71% 69%);
+  --accent-foreground: hsl(0 0% 100%);
+  --destructive: hsl(0 62.8% 30.6%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --border: hsl(222 30% 18%);
+  --input: hsl(222 30% 18%);
+  --ring: hsl(243 75% 59%);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-heading: var(--font-heading-sans);
+  --font-body: var(--font-body-sans);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+}
+
+/* Printed reports always use the light palette, regardless of the viewer's
+   dark-mode preference — the same rule a printed document would follow. */
+.print-light {
+  --background: hsl(220 20% 97%);
+  --foreground: hsl(222 47% 11%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(222 47% 11%);
+  --primary: hsl(183 100% 34%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(220 14% 96%);
+  --secondary-foreground: hsl(222 47% 11%);
+  --muted: hsl(220 14% 96%);
+  --muted-foreground: hsl(220 9% 46%);
+  --accent: hsl(241 71% 69%);
+  --accent-foreground: hsl(0 0% 100%);
+  --border: hsl(220 13% 91%);
+  color-scheme: light;
+}
+
+@media print {
+  /* A real per-page margin (not 0) so every page — not just the first and
+     last — keeps content clear of a physical printer's unprintable edge
+     zone. The tradeoff: this leaves room for the browser's own
+     header/footer (URL, date, page number) to draw again if the viewer
+     hasn't unchecked that in their print dialog. Correctness on paper
+     wins over suppressing that. */
+  @page {
+    margin: 15mm;
+  }
+
+  html,
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    /* The content div's own background only covers its own box — on the
+       last page, whatever's below where the content ends is the body's
+       background showing through. Force it white so no grey bleeds in. */
+    background: #fff !important;
+  }
+}
