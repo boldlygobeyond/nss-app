@@ -29,7 +29,7 @@ function wrapLabel(label: string): [string, string] {
 
 export default function NeedsRipple({ steps }: { steps: { cluster: string; body: string }[] }) {
   return (
-    <div className="flex flex-col sm:flex-row gap-6 sm:gap-8 items-center sm:items-center">
+    <div className="flex flex-col sm:flex-row gap-6 sm:gap-8 items-center sm:items-start">
       <svg viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`} className="w-72 h-72 sm:w-80 sm:h-80 shrink-0">
         {RING_RADII.map((r, i) => (
           <circle key={i} cx={CENTER} cy={CENTER} r={r} className="fill-primary" opacity={RING_OPACITY[i]} />

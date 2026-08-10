@@ -89,14 +89,18 @@ export default function ReportView({
         {INTRO_TEXT}
       </div>
 
-      <SectionHeading>Your Current Needs Snapshot</SectionHeading>
-      <NeedsChart scores={scores} />
+      <div className="print:break-inside-avoid">
+        <SectionHeading>Your Current Needs Snapshot</SectionHeading>
+        <NeedsChart scores={scores} />
+      </div>
 
-      <SectionHeading>Prioritizing Your Needs</SectionHeading>
-      <p className="text-muted-foreground leading-relaxed mb-4">
-        When asked to choose between competing priorities, a few clear patterns emerged in what you tended to
-        protect.
-      </p>
+      <div className="print:break-inside-avoid">
+        <SectionHeading>Prioritizing Your Needs</SectionHeading>
+        <p className="text-muted-foreground leading-relaxed mb-4">
+          When asked to choose between competing priorities, a few clear patterns emerged in what you tended to
+          protect.
+        </p>
+      </div>
       <div className="my-4 pl-4 pr-4 py-3 border-l-4 border-accent bg-accent/5 rounded-r-lg print:break-inside-avoid">
         <p className="text-foreground leading-relaxed">
           <strong className="font-semibold">Key Pattern: </strong>
@@ -109,16 +113,20 @@ export default function ReportView({
         ))}
       </div>
 
-      <SectionHeading>How Your Needs Are Interconnected</SectionHeading>
-      <p className="text-muted-foreground leading-relaxed mb-6">{RIPPLE_INTRO_TEXT}</p>
+      <div className="print:break-inside-avoid">
+        <SectionHeading>How Your Needs Are Interconnected</SectionHeading>
+        <p className="text-muted-foreground leading-relaxed mb-6">{RIPPLE_INTRO_TEXT}</p>
+      </div>
       <NeedsRipple steps={reportData.rippleChain} />
 
-      <SectionHeading>Seeing the Signals</SectionHeading>
-      <p className="text-muted-foreground leading-relaxed mb-4">
-        A signal is an observable marker you can look out for to tell you if a key need of yours is going unmet.
-        When you notice these behaviors popping up in your day-to-day work, use these reflection questions to get
-        clear on what you need, and start a conversation with your manager or team.
-      </p>
+      <div className="print:break-inside-avoid">
+        <SectionHeading>Seeing the Signals</SectionHeading>
+        <p className="text-muted-foreground leading-relaxed mb-4">
+          A signal is an observable marker you can look out for to tell you if a key need of yours is going unmet.
+          When you notice these behaviors popping up in your day-to-day work, use these reflection questions to get
+          clear on what you need, and start a conversation with your manager or team.
+        </p>
+      </div>
       <div className="overflow-x-auto my-4 rounded-lg border border-border/50">
         <table className="w-full border-collapse text-sm table-fixed">
           <colgroup>
@@ -153,14 +161,16 @@ export default function ReportView({
         </table>
       </div>
 
-      <SectionHeading>Key Insights for Your Manager</SectionHeading>
-      <p className="text-muted-foreground leading-relaxed mb-4">
-        During your next 1:1 with your manager, walk through this report and chat through what you need to show up
-        as your best. If the topics below resonate, use them as a starting off point for your conversation:
-      </p>
-      <p className="font-heading text-base font-bold text-foreground mb-3">
-        Tips for Helping {firstName} Meet {possessivePronoun(pronouns)} Needs
-      </p>
+      <div className="print:break-inside-avoid">
+        <SectionHeading>Key Insights for Your Manager</SectionHeading>
+        <p className="text-muted-foreground leading-relaxed mb-4">
+          During your next 1:1 with your manager, walk through this report and chat through what you need to show
+          up as your best. If the topics below resonate, use them as a starting off point for your conversation:
+        </p>
+        <p className="font-heading text-base font-bold text-foreground mb-3">
+          Tips for Helping {firstName} Meet {possessivePronoun(pronouns)} Needs
+        </p>
+      </div>
       <div className="grid sm:grid-cols-2 gap-3">
         {reportData.managerInsights.map((insight, i) => (
           <div key={i} className="bg-primary/5 border border-primary/10 rounded-xl p-4 print:break-inside-avoid">
