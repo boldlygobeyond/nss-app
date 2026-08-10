@@ -2,9 +2,11 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { buildReportPrompt } from "@/lib/nss/reportPrompts";
 import { archiveReportToDrive } from "@/lib/nss/googleDrive";
 import { renderReportPdf } from "@/lib/nss/pdfRender";
+import { cacheReportPdf } from "@/lib/nss/pdfStorage";
 import { computePairwiseMatchups, type TopNeed } from "@/lib/nss/surveyEngine";
 import type { ReportData } from "@/lib/nss/reportTypes";
 
@@ -132,6 +134,11 @@ export async function POST(request: Request) {
         const coverUrl = `${origin}/reports/${submissionId}/print/cover`;
         const bodyUrl = `${origin}/reports/${submissionId}/print?pdfMode=1`;
         const pdfBuffer = await renderReportPdf({ coverUrl, bodyUrl, cookies: cookieStore.getAll() });
+
+        await cacheReportPdf(createAdminClient(), submissionId, pdfBuffer).catch((cacheError) =>
+          console.warn("[generate-reports] PDF cache failed:", cacheError),
+        );
+
         const archived = await archiveReportToDrive({
           userEmail: submission.user_email as string,
           pdfBuffer,
