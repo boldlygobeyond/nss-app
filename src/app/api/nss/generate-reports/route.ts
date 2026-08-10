@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { buildReportPrompt } from "@/lib/nss/reportPrompts";
 import { archiveReportToDrive } from "@/lib/nss/googleDrive";
-import { renderUrlToPdf } from "@/lib/nss/pdfRender";
+import { renderReportPdf } from "@/lib/nss/pdfRender";
 import { computePairwiseMatchups, type TopNeed } from "@/lib/nss/surveyEngine";
 import type { ReportData } from "@/lib/nss/reportTypes";
 
@@ -129,8 +129,9 @@ export async function POST(request: Request) {
     if (submission.user_email) {
       try {
         const cookieStore = await cookies();
-        const printUrl = `${origin}/reports/${submissionId}/print?pdfMode=1`;
-        const pdfBuffer = await renderUrlToPdf(printUrl, cookieStore.getAll());
+        const coverUrl = `${origin}/reports/${submissionId}/print/cover`;
+        const bodyUrl = `${origin}/reports/${submissionId}/print?pdfMode=1`;
+        const pdfBuffer = await renderReportPdf({ coverUrl, bodyUrl, cookies: cookieStore.getAll() });
         const archived = await archiveReportToDrive({
           userEmail: submission.user_email as string,
           pdfBuffer,

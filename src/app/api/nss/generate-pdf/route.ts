@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { getSubmission } from "@/lib/nss/api";
 import { getMyProfile } from "@/lib/nss/userProfiles";
-import { renderUrlToPdf } from "@/lib/nss/pdfRender";
+import { renderReportPdf } from "@/lib/nss/pdfRender";
 import { buildReportFileName } from "@/lib/nss/reportFilename";
 
 export const maxDuration = 60;
@@ -29,11 +29,12 @@ export async function GET(request: Request) {
   }
 
   const cookieStore = await cookies();
-  const printUrl = `${origin}/reports/${submissionId}/print?pdfMode=1`;
+  const coverUrl = `${origin}/reports/${submissionId}/print/cover`;
+  const bodyUrl = `${origin}/reports/${submissionId}/print?pdfMode=1`;
 
   try {
     const [pdfBuffer, profile] = await Promise.all([
-      renderUrlToPdf(printUrl, cookieStore.getAll()),
+      renderReportPdf({ coverUrl, bodyUrl, cookies: cookieStore.getAll() }),
       getMyProfile(supabase, submission.user_id).catch(() => null),
     ]);
     const fileName = `${buildReportFileName(

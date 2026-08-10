@@ -7,7 +7,7 @@ import NeedsChart from "./NeedsChart";
 import NeedsRipple from "./NeedsRipple";
 
 const INTRO_TEXT =
-  "Take a look at the report below to understand how your needs might show up in the workplace. Share the report with your manager and have a conversation about what you need from the team to show up as your best each and every day.";
+  "Take a look at your Needs Signal Report to understand how your needs might show up in the workplace. Share the report with your manager and have a conversation about what you need from the team to show up as your best each and every day.";
 
 const FLIGHT_PLAN_EMAIL = "first.contact@boldlygobeyond.com";
 const FLIGHT_PLAN_MAILTO = `mailto:${FLIGHT_PLAN_EMAIL}?subject=${encodeURIComponent("Let's Make a Personalized Flight Plan!")}`;
@@ -94,7 +94,7 @@ export default function ReportView({
         <NeedsChart scores={scores} />
       </div>
 
-      <div className="print:break-inside-avoid">
+      <div className="print:break-inside-avoid print:break-before-page">
         <SectionHeading>Prioritizing Your Needs</SectionHeading>
         <p className="text-muted-foreground leading-relaxed mb-4">
           When asked to choose between competing priorities, a few clear patterns emerged in what you tended to
@@ -113,13 +113,13 @@ export default function ReportView({
         ))}
       </div>
 
-      <div className="print:break-inside-avoid">
+      <div className="print:break-inside-avoid print:break-before-page">
         <SectionHeading>How Your Needs Are Interconnected</SectionHeading>
         <p className="text-muted-foreground leading-relaxed mb-6">{RIPPLE_INTRO_TEXT}</p>
       </div>
       <NeedsRipple steps={reportData.rippleChain} />
 
-      <div className="print:break-inside-avoid">
+      <div className="print:break-inside-avoid print:break-before-page">
         <SectionHeading>Seeing the Signals</SectionHeading>
         <p className="text-muted-foreground leading-relaxed mb-4">
           A signal is an observable marker you can look out for to tell you if a key need of yours is going unmet.
@@ -161,7 +161,7 @@ export default function ReportView({
         </table>
       </div>
 
-      <div className="print:break-inside-avoid">
+      <div className="print:break-inside-avoid print:break-before-page">
         <SectionHeading>Key Insights for Your Manager</SectionHeading>
         <p className="text-muted-foreground leading-relaxed mb-4">
           During your next 1:1 with your manager, walk through this report and chat through what you need to show
