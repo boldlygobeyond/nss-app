@@ -5,6 +5,7 @@ import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { getSubmission, type NssSubmission } from "@/lib/nss/api";
 import { getMyProfile } from "@/lib/nss/userProfiles";
+import { buildFullName } from "@/lib/nss/reportFilename";
 
 export default function CoverClient({ id }: { id: string }) {
   const [submission, setSubmission] = useState<NssSubmission | null>(null);
@@ -17,8 +18,7 @@ export default function CoverClient({ id }: { id: string }) {
       setSubmission(row);
       if (row) {
         const profile = await getMyProfile(supabase, row.user_id).catch(() => null);
-        const name = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ");
-        setFullName(name || row.respondent_name);
+        setFullName(buildFullName(profile?.first_name, profile?.last_name, row.respondent_name));
       }
     };
     load();

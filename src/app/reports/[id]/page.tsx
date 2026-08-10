@@ -4,12 +4,15 @@ import { useCallback, useEffect, useState, use } from "react";
 import { Printer, RefreshCw, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getSubmission, type NssSubmission } from "@/lib/nss/api";
+import { getMyProfile } from "@/lib/nss/userProfiles";
+import { buildFullName } from "@/lib/nss/reportFilename";
 import GlobalHeader from "@/components/GlobalHeader";
 import ReportView from "@/components/reports/ReportView";
 
 export default function ReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [submission, setSubmission] = useState<NssSubmission | null>(null);
+  const [fullName, setFullName] = useState<string | null>(null);
   const [isOwner, setIsOwner] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -78,6 +81,11 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
       const owner = !!row && row.user_id === userData.user?.id;
       setIsOwner(owner);
       setSubmission(row);
+
+      if (row) {
+        const profile = await getMyProfile(supabase, row.user_id).catch(() => null);
+        if (!cancelled) setFullName(buildFullName(profile?.first_name, profile?.last_name, row.respondent_name));
+      }
 
       // Only auto-generate on behalf of the report's own owner — a manager
       // viewing a not-yet-generated subordinate report shouldn't trigger
@@ -163,7 +171,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
           <div className="mb-8">
             <h1 className="font-heading text-2xl md:text-3xl font-bold text-foreground">Needs Signal Report</h1>
             <div className="flex items-baseline justify-between mt-1 mb-4">
-              <span className="text-lg md:text-xl font-semibold text-foreground">{submission.respondent_name}</span>
+              <span className="text-lg md:text-xl font-semibold text-foreground">{fullName ?? submission.respondent_name}</span>
               <span className="text-muted-foreground text-base">
                 {new Date(submission.updated_at).toLocaleDateString("en-US", {
                   year: "numeric",
@@ -178,7 +186,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
           <ReportView
             reportData={submission.report_data}
             scores={submission.scores}
-            respondentName={submission.respondent_name}
+            respondentName={fullName ?? submission.respondent_name}
             pronouns={submission.pronouns}
           />
         </div>
