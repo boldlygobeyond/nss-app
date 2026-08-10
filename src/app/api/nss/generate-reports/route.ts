@@ -1,16 +1,32 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { buildEmployeePrompt, buildManagerPrompt } from "@/lib/nss/reportPrompts";
-import { archiveReportsToDrive } from "@/lib/nss/googleDrive";
-import type { TopNeed } from "@/lib/nss/surveyEngine";
+import { buildReportPrompt } from "@/lib/nss/reportPrompts";
+import { archiveReportToDrive } from "@/lib/nss/googleDrive";
+import { renderUrlToPdf } from "@/lib/nss/pdfRender";
+import { computePairwiseMatchups, type TopNeed } from "@/lib/nss/surveyEngine";
+import type { ReportData } from "@/lib/nss/reportTypes";
+
+export const maxDuration = 90;
 
 const REPORT_SYSTEM_PROMPT =
-  "Output only the requested report content in the exact structure specified. " +
-  "Do not include internal or system XML tags in your response. " +
-  "Do not add any preamble, meta-commentary, or explanation of what you are doing.";
+  "Output only the requested JSON object. " +
+  "Do not include markdown code fences, internal/system XML tags, preamble, or any commentary before or after the JSON.";
+
+function extractJson(text: string): unknown {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const candidate = fenced ? fenced[1] : trimmed;
+  // The model occasionally emits a trailing comma before a closing bracket
+  // (valid in JS/TS, not in JSON) — strip it rather than fail the whole
+  // generation over one stray character.
+  const repaired = candidate.replace(/,(\s*[\]}])/g, "$1");
+  return JSON.parse(repaired);
+}
 
 export async function POST(request: Request) {
+  const { origin } = new URL(request.url);
   const { submissionId, force } = await request.json();
   if (!submissionId) {
     return NextResponse.json({ error: "submissionId required" }, { status: 400 });
@@ -39,86 +55,85 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Submission has no scored results yet" }, { status: 400 });
   }
 
-  if (!force && submission.employee_report && submission.manager_report) {
-    return NextResponse.json({
-      employee_report: submission.employee_report,
-      manager_report: submission.manager_report,
-    });
+  if (!force && submission.report_data) {
+    return NextResponse.json({ report_data: submission.report_data });
   }
 
   const firstName = (submission.respondent_name as string).split(" ")[0];
   const anthropic = new Anthropic();
 
   try {
-    const [employeeResponse, managerResponse] = await Promise.all([
-      anthropic.messages.create({
-        model: "claude-opus-5",
-        max_tokens: 4096,
-        thinking: { type: "disabled" },
-        output_config: { effort: "high" },
-        system: REPORT_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: buildEmployeePrompt(firstName, topNeeds) }],
-      }),
-      anthropic.messages.create({
-        model: "claude-opus-5",
-        max_tokens: 4096,
-        thinking: { type: "disabled" },
-        output_config: { effort: "high" },
-        system: REPORT_SYSTEM_PROMPT,
-        messages: [
-          {
-            role: "user",
-            content: buildManagerPrompt(
-              firstName,
-              submission.respondent_name as string,
-              (submission.pronouns as string) || "they/them",
-              topNeeds,
-            ),
-          },
-        ],
-      }),
-    ]);
+    const { data: responses, error: responsesError } = await supabase
+      .from("nss_responses")
+      .select("chosen_clusters, rejected_clusters")
+      .eq("submission_id", submissionId);
+    if (responsesError) throw responsesError;
 
-    if (employeeResponse.stop_reason === "refusal" || managerResponse.stop_reason === "refusal") {
+    const matchups = computePairwiseMatchups(responses ?? []);
+
+    const prompt = buildReportPrompt({
+      firstName,
+      respondentName: submission.respondent_name as string,
+      pronouns: (submission.pronouns as string) || "they/them",
+      topNeeds,
+      matchups,
+    });
+
+    const response = await anthropic.messages.create({
+      model: "claude-opus-5",
+      max_tokens: 4096,
+      thinking: { type: "disabled" },
+      output_config: { effort: "high" },
+      system: REPORT_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    if (response.stop_reason === "refusal") {
       return NextResponse.json({ error: "Report generation was declined" }, { status: 502 });
     }
 
-    const employeeText = employeeResponse.content
-      .filter((b) => b.type === "text")
-      .map((b) => b.text)
-      .join("\n");
-    const managerText = managerResponse.content
+    const rawText = response.content
       .filter((b) => b.type === "text")
       .map((b) => b.text)
       .join("\n");
 
+    let reportData: ReportData;
+    try {
+      const parsed = extractJson(rawText) as ReportData;
+      // Defensive against the model occasionally over/under-shooting an
+      // array length despite explicit counts in the prompt — clamp rather
+      // than let a stray extra card break the fixed layout.
+      reportData = {
+        ...parsed,
+        choiceInsights: parsed.choiceInsights?.slice(0, 3) ?? [],
+        rippleChain: parsed.rippleChain?.slice(0, 3) ?? [],
+        signals: parsed.signals?.slice(0, 3) ?? [],
+        managerInsights: parsed.managerInsights?.slice(0, 4) ?? [],
+      };
+    } catch (parseError) {
+      console.error("[generate-reports] Failed to parse report JSON:", parseError, rawText);
+      return NextResponse.json({ error: "Report generation returned an unexpected format" }, { status: 502 });
+    }
+
     const { error: updateError } = await supabase
       .from("nss_submissions")
-      .update({
-        employee_report: employeeText,
-        manager_report: managerText,
-        status: "report_generated",
-      })
+      .update({ report_data: reportData, status: "report_generated" })
       .eq("id", submissionId);
 
     if (updateError) throw updateError;
 
     if (submission.user_email) {
       try {
-        const archived = await archiveReportsToDrive({
+        const cookieStore = await cookies();
+        const printUrl = `${origin}/reports/${submissionId}/print?pdfMode=1`;
+        const pdfBuffer = await renderUrlToPdf(printUrl, cookieStore.getAll());
+        const archived = await archiveReportToDrive({
           userEmail: submission.user_email as string,
-          respondentName: submission.respondent_name as string,
-          employeeText,
-          managerText,
+          pdfBuffer,
         });
         await supabase
           .from("nss_submissions")
-          .update({
-            employee_pdf_url: archived.employeePdfUrl,
-            employee_pdf_drive_id: archived.employeePdfDriveId,
-            manager_pdf_url: archived.managerPdfUrl,
-            manager_pdf_drive_id: archived.managerPdfDriveId,
-          })
+          .update({ pdf_url: archived.pdfUrl, pdf_drive_id: archived.pdfDriveId })
           .eq("id", submissionId);
       } catch (driveError) {
         // Best-effort — Drive archival is a backup copy, not required for the
@@ -127,7 +142,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ employee_report: employeeText, manager_report: managerText });
+    return NextResponse.json({ report_data: reportData });
   } catch (error) {
     console.error("[generate-reports]", error);
     return NextResponse.json({ error: "Report generation failed" }, { status: 500 });

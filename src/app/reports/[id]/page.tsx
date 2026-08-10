@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, use } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { User, Users, Printer, RefreshCw } from "lucide-react";
+import { Printer, RefreshCw, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getSubmission, type NssSubmission } from "@/lib/nss/api";
 import GlobalHeader from "@/components/GlobalHeader";
@@ -11,20 +9,35 @@ import ReportView from "@/components/reports/ReportView";
 
 export default function ReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const searchParams = useSearchParams();
   const [submission, setSubmission] = useState<NssSubmission | null>(null);
   const [isOwner, setIsOwner] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"employee" | "manager">(
-    searchParams.get("tab") === "manager" ? "manager" : "employee",
-  );
 
-  // A manager viewing a subordinate's report only ever sees the manager
-  // version — never the subordinate's personal, first-person report.
-  const effectiveTab = isOwner ? tab : "manager";
+  const handleDownloadPdf = useCallback(async () => {
+    setDownloadingPdf(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/nss/generate-pdf?id=${id}`);
+      if (!res.ok) throw new Error("PDF generation failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(submission?.respondent_name ?? "NSS").replace(/\s+/g, "_")}_Report.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "PDF generation failed");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }, [id, submission]);
 
-  const generateReports = useCallback(
+  const generateReport = useCallback(
     async (row: NssSubmission, force: boolean) => {
       setGenerating(true);
       setError(null);
@@ -36,7 +49,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
         });
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || "Report generation failed");
-        setSubmission({ ...row, employee_report: body.employee_report, manager_report: body.manager_report });
+        setSubmission({ ...row, report_data: body.report_data });
       } catch (e) {
         setError(e instanceof Error ? e.message : "Report generation failed");
       } finally {
@@ -61,8 +74,11 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
       // Only auto-generate on behalf of the report's own owner — a manager
       // viewing a not-yet-generated subordinate report shouldn't trigger
       // (and silently fail to save) a generation run for someone else.
-      if (owner && row && !row.employee_report && row.status === "completed") {
-        generateReports(row, false);
+      // Also re-triggers for report_data saved under an older schema
+      // version (missing rippleChain) so a shape change here self-heals
+      // instead of leaving stale rows permanently broken.
+      if (owner && row && (!row.report_data || !row.report_data.rippleChain) && row.status === "completed") {
+        generateReport(row, true);
       }
     };
 
@@ -90,63 +106,72 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
         <div className="flex-1 flex items-center justify-center px-4 text-center">
           <p className="text-destructive">{error}</p>
         </div>
-      ) : !isOwner && !submission.manager_report ? (
+      ) : !isOwner && !submission.report_data ? (
         <div className="flex-1 flex items-center justify-center px-4 text-center">
           <p className="text-muted-foreground">This person hasn&apos;t generated their report yet.</p>
         </div>
       ) : (
-        <div className="max-w-3xl mx-auto w-full px-6 py-8">
-          <div className="flex items-center justify-between border-b border-border/50 mb-8">
-            <div className="flex items-center gap-1">
-              {isOwner && (
-                <button
-                  onClick={() => setTab("employee")}
-                  className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    effectiveTab === "employee"
-                      ? "border-primary text-primary"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <User className="w-4 h-4" />
-                  Your Report
-                </button>
-              )}
+        <div className="max-w-3xl mx-auto w-full px-6 py-8 relative">
+          <div className="flex lg:hidden gap-2 justify-end mb-4">
+            <button
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
+              className="flex items-center gap-1.5 text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors disabled:opacity-50"
+            >
+              {downloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+              {downloadingPdf ? "Preparing..." : "Download PDF"}
+            </button>
+            {isOwner && (
               <button
-                onClick={() => setTab("manager")}
-                className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  effectiveTab === "manager"
-                    ? "border-primary text-primary"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Users className="w-4 h-4" />
-                Share with Your Manager
-              </button>
-            </div>
-            <div className="flex gap-2 mb-2 shrink-0">
-              {isOwner && (
-                <button
-                  onClick={() => generateReports(submission, true)}
-                  className="flex items-center gap-1.5 text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  Regenerate
-                </button>
-              )}
-              <Link
-                href={`/reports/${id}/print?type=${effectiveTab}`}
-                target="_blank"
+                onClick={() => generateReport(submission, true)}
                 className="flex items-center gap-1.5 text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors"
               >
-                <Printer className="w-3.5 h-3.5" />
-                Download PDF
-              </Link>
+                <RefreshCw className="w-3.5 h-3.5" />
+                Regenerate
+              </button>
+            )}
+          </div>
+
+          <div className="hidden lg:flex lg:flex-col lg:gap-2 lg:absolute lg:left-full lg:ml-6 lg:top-8 lg:w-36">
+            <button
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
+              className="flex items-center gap-1.5 text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors whitespace-nowrap disabled:opacity-50"
+            >
+              {downloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+              {downloadingPdf ? "Preparing..." : "Download PDF"}
+            </button>
+            {isOwner && (
+              <button
+                onClick={() => generateReport(submission, true)}
+                className="flex items-center gap-1.5 text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors whitespace-nowrap"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Regenerate
+              </button>
+            )}
+          </div>
+
+          <div className="mb-8">
+            <h1 className="font-heading text-2xl md:text-3xl font-bold text-foreground">Needs Signal Report</h1>
+            <div className="flex items-baseline justify-between mt-1 mb-4">
+              <span className="text-lg md:text-xl font-semibold text-foreground">{submission.respondent_name}</span>
+              <span className="text-muted-foreground text-base">
+                {new Date(submission.updated_at).toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </span>
             </div>
+            <div className="h-0.5 bg-accent rounded-full" />
           </div>
 
           <ReportView
-            reportText={effectiveTab === "employee" ? submission.employee_report : submission.manager_report}
-            type={effectiveTab}
+            reportData={submission.report_data}
+            scores={submission.scores}
+            firstName={submission.respondent_name.split(" ")[0]}
+            pronouns={submission.pronouns}
           />
         </div>
       )}

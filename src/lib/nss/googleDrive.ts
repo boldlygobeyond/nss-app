@@ -1,39 +1,10 @@
-// Google Drive archival — ported from the Base44 export's uploadNSSReports /
-// regenerateAllUserReports functions (stripMarkdown + jsPDF text-dump, and
-// the findOrCreateFolder/uploadFileToDrive Shared Drive logic), adapted to
-// use a service account + googleapis instead of Base44's connector.
+// Google Drive archival — findOrCreateFolder/uploadFileToDrive Shared Drive
+// logic ported from the Base44 export's uploadNSSReports function, adapted
+// to use a service account + googleapis instead of Base44's connector. The
+// PDF itself is the same headless-Chromium render used for the in-app
+// download (see pdfRender.ts), not a separate simplified copy.
 
 import { google } from "googleapis";
-import { jsPDF } from "jspdf";
-
-function stripMarkdown(text: string): string {
-  return (text || "")
-    .replace(/#{1,6}\s?/g, "")
-    .replace(/\*\*/g, "")
-    .replace(/\*/g, "")
-    .replace(/\|/g, " | ")
-    .replace(/^[-=]{3,}$/gm, "")
-    .trim();
-}
-
-export function generatePdfBuffer(title: string, reportText: string): Buffer {
-  const doc = new jsPDF();
-  doc.setFontSize(18);
-  doc.text(title, 15, 20);
-  doc.setFontSize(10);
-  const cleaned = stripMarkdown(reportText);
-  const lines: string[] = doc.splitTextToSize(cleaned, 180);
-  let y = 35;
-  lines.forEach((line) => {
-    if (y > 275) {
-      doc.addPage();
-      y = 20;
-    }
-    doc.text(line, 15, y);
-    y += 5;
-  });
-  return Buffer.from(doc.output("arraybuffer"));
-}
 
 function getDriveClient() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -102,17 +73,10 @@ async function uploadPdf(
   return { id, url: `https://drive.google.com/file/d/${id}/view` };
 }
 
-export async function archiveReportsToDrive(params: {
+export async function archiveReportToDrive(params: {
   userEmail: string;
-  respondentName: string;
-  employeeText: string;
-  managerText: string;
-}): Promise<{
-  employeePdfUrl: string;
-  employeePdfDriveId: string;
-  managerPdfUrl: string;
-  managerPdfDriveId: string;
-}> {
+  pdfBuffer: Buffer;
+}): Promise<{ pdfUrl: string; pdfDriveId: string }> {
   const driveId = process.env.GOOGLE_DRIVE_ID;
   if (!driveId) throw new Error("GOOGLE_DRIVE_ID is not configured");
 
@@ -122,21 +86,7 @@ export async function archiveReportsToDrive(params: {
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
-  const employeePdf = generatePdfBuffer(
-    `Needs Signal Survey Report — ${params.respondentName}`,
-    params.employeeText,
-  );
-  const managerPdf = generatePdfBuffer(`Manager Report: Supporting ${params.respondentName}`, params.managerText);
+  const file = await uploadPdf(drive, `${params.userEmail}_${timestamp}_NSS_Report.pdf`, params.pdfBuffer, userFolderId);
 
-  const [employeeFile, managerFile] = await Promise.all([
-    uploadPdf(drive, `${params.userEmail}_${timestamp}_Employee_NSS.pdf`, employeePdf, userFolderId),
-    uploadPdf(drive, `${params.userEmail}_${timestamp}_Manager_NSS.pdf`, managerPdf, userFolderId),
-  ]);
-
-  return {
-    employeePdfUrl: employeeFile.url,
-    employeePdfDriveId: employeeFile.id,
-    managerPdfUrl: managerFile.url,
-    managerPdfDriveId: managerFile.id,
-  };
+  return { pdfUrl: file.url, pdfDriveId: file.id };
 }
