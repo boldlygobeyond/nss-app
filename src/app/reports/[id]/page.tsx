@@ -90,10 +90,17 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
       // Only auto-generate on behalf of the report's own owner — a manager
       // viewing a not-yet-generated subordinate report shouldn't trigger
       // (and silently fail to save) a generation run for someone else.
-      // Also re-triggers for report_data saved under an older schema
-      // version (missing rippleChain) so a shape change here self-heals
-      // instead of leaving stale rows permanently broken.
-      if (owner && row && (!row.report_data || !row.report_data.rippleChain) && row.status === "completed") {
+      // Also re-triggers for report_data that's missing or saved under an
+      // older schema version (missing rippleChain) so a shape change here
+      // self-heals instead of leaving stale rows permanently broken —
+      // status can be "report_generated" from the old employee/manager-
+      // report era (report_data didn't exist yet), not just "completed".
+      if (
+        owner &&
+        row &&
+        (!row.report_data || !row.report_data.rippleChain) &&
+        row.status !== "in_progress"
+      ) {
         generateReport(row, true);
       }
     };
