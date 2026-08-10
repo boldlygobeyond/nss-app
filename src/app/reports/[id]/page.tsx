@@ -178,7 +178,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
           <ReportView
             reportData={submission.report_data}
             scores={submission.scores}
-            firstName={submission.respondent_name.split(" ")[0]}
+            respondentName={submission.respondent_name}
             pronouns={submission.pronouns}
           />
         </div>

@@ -58,13 +58,13 @@ function InsightRow({ headline, body }: { headline: string; body: ReactNode }) {
 export default function ReportView({
   reportData,
   scores,
-  firstName,
+  respondentName,
   pronouns,
   variant = "card",
 }: {
   reportData: ReportData | null;
   scores: Record<ClusterKey, ClusterScore> | null;
-  firstName: string;
+  respondentName: string;
   pronouns?: string | null;
   variant?: "card" | "plain";
 }) {
@@ -168,7 +168,7 @@ export default function ReportView({
           up as your best. If the topics below resonate, use them as a starting off point for your conversation:
         </p>
         <p className="font-heading text-base font-bold text-foreground mb-3">
-          Tips for Helping {firstName} Meet {possessivePronoun(pronouns)} Needs
+          Tips for Helping {respondentName} Meet {possessivePronoun(pronouns)} Needs
         </p>
       </div>
       <div className="grid sm:grid-cols-2 gap-3">
