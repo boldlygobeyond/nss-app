@@ -45,10 +45,12 @@ export function buildReportPrompt(params: {
   );
 
   const pronoun = pronouns || "they/them";
-  const heCapital = pronoun.includes("he") ? "He" : pronoun.includes("she") ? "She" : "They";
+  // Check "she" before "he" — "she/her" contains the substring "he", so
+  // checking "he" first misclassified every she/her respondent as he/him.
+  const heCapital = pronoun.includes("she") ? "She" : pronoun.includes("he") ? "He" : "They";
   const heLower = heCapital.toLowerCase();
-  const hisHer = pronoun.includes("he") ? "his" : pronoun.includes("she") ? "her" : "their";
-  const himHer = pronoun.includes("he") ? "him" : pronoun.includes("she") ? "her" : "them";
+  const hisHer = pronoun.includes("she") ? "her" : pronoun.includes("he") ? "his" : "their";
+  const himHer = pronoun.includes("she") ? "her" : pronoun.includes("he") ? "him" : "them";
 
   return `You are generating a personalized Needs Signal Report. This single document is read by the person AND shared with their manager in a 1:1 — it is not two separate reports.
 

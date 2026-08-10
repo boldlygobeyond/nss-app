@@ -14,8 +14,10 @@ const FLIGHT_PLAN_MAILTO = `mailto:${FLIGHT_PLAN_EMAIL}?subject=${encodeURICompo
 
 function possessivePronoun(pronouns: string | null | undefined): string {
   const p = pronouns || "";
-  if (p.includes("he")) return "His";
+  // Check "she" before "he" — "she/her" contains the substring "he", so
+  // checking "he" first misclassified every she/her respondent as he/him.
   if (p.includes("she")) return "Her";
+  if (p.includes("he")) return "His";
   return "Their";
 }
 
