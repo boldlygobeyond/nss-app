@@ -8,7 +8,11 @@ import { renderUrlToPdf } from "@/lib/nss/pdfRender";
 import { computePairwiseMatchups, type TopNeed } from "@/lib/nss/surveyEngine";
 import type { ReportData } from "@/lib/nss/reportTypes";
 
-export const maxDuration = 90;
+// Hobby-plan ceiling without Fluid Compute is 60s — this route does a
+// Claude call AND a headless-Chromium PDF render for Drive archival, so
+// it's the tightest fit in the app. If this starts timing out under real
+// load, enabling Fluid Compute raises the Hobby-plan cap to 300s.
+export const maxDuration = 60;
 
 const REPORT_SYSTEM_PROMPT =
   "Output only the requested JSON object. " +
