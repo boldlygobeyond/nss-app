@@ -216,6 +216,46 @@ export function getTopNeeds(tally: Tally): TopNeed[] {
   }).sort((a, b) => b.winRate - a.winRate);
 }
 
+// ─── Pairwise matchups ──────────────────────────────────────────────────────
+
+export interface PairwiseMatchup {
+  a: ClusterKey;
+  b: ClusterKey;
+  aWins: number;
+  bWins: number;
+  total: number;
+}
+
+/**
+ * Head-to-head tallies between cluster pairs, computed from the raw
+ * chosen/rejected cluster on each answered question — the actual trade-offs
+ * the person made, not an inference from aggregate win rates. Used to ground
+ * report language like "when X and Y pulled in opposite directions, you
+ * chose X" in something that really happened, rather than a plausible-
+ * sounding guess.
+ */
+export function computePairwiseMatchups(
+  responses: { chosen_clusters: ClusterKey[]; rejected_clusters: ClusterKey[] }[],
+): PairwiseMatchup[] {
+  const matchups = new Map<string, PairwiseMatchup>();
+
+  for (const r of responses) {
+    const chosen = r.chosen_clusters[0];
+    const rejected = r.rejected_clusters[0];
+    if (!chosen || !rejected) continue;
+
+    const [a, b] = [chosen, rejected].sort();
+    const key = `${a}|${b}`;
+    const existing = matchups.get(key) ?? { a, b, aWins: 0, bWins: 0, total: 0 };
+    existing.total++;
+    if (chosen === a) existing.aWins++;
+    else existing.bWins++;
+    matchups.set(key, existing);
+  }
+
+  return Array.from(matchups.values());
+}
+
 // ─── Utility ─────────────────────────────────────────────────────────────────
 
 export function shuffleArray<T>(arr: T[]): T[] {

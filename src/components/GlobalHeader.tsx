@@ -3,18 +3,23 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Menu, X, Sun, Moon, LogOut, Home, FileText, Users, Settings } from "lucide-react";
+import { Home, Menu, X, Sun, Moon, LogOut, FileText, Users, Settings } from "lucide-react";
 import BgbLogo from "./BgbLogo";
 import { useDarkMode } from "@/lib/hooks/useDarkMode";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, isManager } from "@/lib/nss/userProfiles";
+import { listSubmissionsForUser } from "@/lib/nss/api";
 
 export default function GlobalHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [isDark, setIsDark] = useDarkMode();
+  const [isAdmin, setIsAdmin] = useState(false);
   const [showManagerLink, setShowManagerLink] = useState(false);
-  const [showAdminLink, setShowAdminLink] = useState(false);
+  const [hasCompleted, setHasCompleted] = useState(false);
   const router = useRouter();
+
+  const hasMenu = isAdmin || showManagerLink;
+  const showHomeIcon = !hasMenu && hasCompleted;
 
   useEffect(() => {
     const check = async () => {
@@ -23,18 +28,21 @@ export default function GlobalHeader() {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user?.email) return;
-      const [profile, managerCheck] = await Promise.all([
+      const [profile, managerCheck, submissions] = await Promise.all([
         getMyProfile(supabase, user.id),
         isManager(supabase, user.email),
+        listSubmissionsForUser(supabase, user.id),
       ]);
-      setShowAdminLink(profile?.role === "admin");
+      setIsAdmin(profile?.role === "admin");
       setShowManagerLink(managerCheck);
+      setHasCompleted(submissions.length > 0);
     };
     check();
   }, []);
 
   const handleLogout = async () => {
     setMenuOpen(false);
+    localStorage.removeItem("nss_survey_state");
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/login");
@@ -44,26 +52,53 @@ export default function GlobalHeader() {
   return (
     <>
       <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-card/95 backdrop-blur-sm flex items-center px-4 border-b border-border/50">
-        <div className="w-10 flex items-center">
-          <button
-            onClick={() => setMenuOpen((o) => !o)}
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-            aria-label="Menu"
-          >
-            {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
+        <div className="w-20 flex items-center">
+          {hasMenu ? (
+            <button
+              onClick={() => setMenuOpen((o) => !o)}
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+              aria-label="Menu"
+            >
+              {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+          ) : (
+            showHomeIcon && (
+              <Link
+                href="/"
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                aria-label="Home"
+              >
+                <Home className="w-5 h-5" />
+              </Link>
+            )
+          )}
         </div>
 
         <div className="flex-1 flex items-center justify-center">
-          <Link href="/">
+          <a href="https://boldlygobeyond.com" target="_blank" rel="noopener noreferrer">
             <BgbLogo height={24} />
-          </Link>
+          </a>
         </div>
 
-        <div className="w-10" />
+        <div className="w-20 flex items-center justify-end gap-1">
+          <button
+            onClick={() => setIsDark(!isDark)}
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          </button>
+          <button
+            onClick={handleLogout}
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-colors"
+            aria-label="Log out"
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
+        </div>
       </header>
 
-      {menuOpen && (
+      {menuOpen && hasMenu && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
           <div className="fixed top-14 left-3 z-50 bg-card border border-border/50 rounded-xl shadow-lg py-1.5 w-52">
@@ -93,7 +128,7 @@ export default function GlobalHeader() {
                 Manager Dashboard
               </Link>
             )}
-            {showAdminLink && (
+            {isAdmin && (
               <Link
                 href="/admin/users"
                 onClick={() => setMenuOpen(false)}
@@ -103,24 +138,6 @@ export default function GlobalHeader() {
                 Team Setup
               </Link>
             )}
-            <button
-              onClick={() => {
-                setIsDark(!isDark);
-                setMenuOpen(false);
-              }}
-              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary transition-colors"
-            >
-              {isDark ? <Sun className="w-4 h-4 text-muted-foreground" /> : <Moon className="w-4 h-4 text-muted-foreground" />}
-              {isDark ? "Light Mode" : "Dark Mode"}
-            </button>
-            <div className="my-1 border-t border-border/50" />
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-destructive hover:bg-destructive/5 transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-              Logout
-            </button>
           </div>
         </>
       )}

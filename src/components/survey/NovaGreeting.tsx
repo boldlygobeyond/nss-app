@@ -69,15 +69,17 @@ export default function NovaGreeting({
   return (
     <div className="flex flex-col items-center px-4 pt-10 pb-12">
       <div className="w-full max-w-lg mb-4">
-        <button
-          onClick={handleBack}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back
-        </button>
+        {step !== 0 && (
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back
+          </button>
+        )}
       </div>
 
       <motion.div
@@ -182,7 +184,7 @@ export default function NovaGreeting({
             </h2>
             <div className="bg-card border border-border/50 rounded-2xl p-6 md:p-8 text-left shadow-sm mb-8">
               <p className="text-foreground text-base md:text-lg leading-relaxed mb-4">
-                Today, I&apos;m going to take you through a series of &quot;would you rather&quot; style questions to
+                Today, I&apos;m going to take you through 50 &quot;would you rather&quot; style questions to
                 learn a bit about you. Don&apos;t worry about tying your answers to work—just go with whatever comes
                 to mind.
               </p>
@@ -191,10 +193,7 @@ export default function NovaGreeting({
                 <span className="font-semibold text-primary">&quot;It Depends&quot;</span> and I&apos;ll see if I can
                 clarify things for you. If you still aren&apos;t sure, you can skip the question.
               </p>
-              <p className="text-foreground text-base md:text-lg leading-relaxed">
-                The assessment will be no longer than 50 questions, but I&apos;ll see if I can get it done in fewer.
-                Let&apos;s get started.
-              </p>
+              <p className="text-foreground text-base md:text-lg leading-relaxed">Let&apos;s get started.</p>
             </div>
             <button
               onClick={handleBegin}

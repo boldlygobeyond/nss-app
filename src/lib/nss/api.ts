@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ClusterKey } from "./clusters";
 import type { Tally, TopNeed, ClusterScore } from "./surveyEngine";
+import type { ReportData } from "./reportTypes";
 
 export interface NssSubmission {
   id: string;
@@ -14,12 +15,9 @@ export interface NssSubmission {
   questions_answered: number;
   top_needs: TopNeed[] | null;
   scores: Record<ClusterKey, ClusterScore> | null;
-  employee_report: string | null;
-  manager_report: string | null;
-  employee_pdf_url: string | null;
-  employee_pdf_drive_id: string | null;
-  manager_pdf_url: string | null;
-  manager_pdf_drive_id: string | null;
+  report_data: ReportData | null;
+  pdf_url: string | null;
+  pdf_drive_id: string | null;
   updated_at: string;
 }
 
@@ -150,6 +148,19 @@ export async function insertResponse(
   if (error) throw error;
 }
 
+export async function listResponsesForSubmission(
+  supabase: SupabaseClient,
+  submissionId: string,
+): Promise<{ chosen_clusters: ClusterKey[]; rejected_clusters: ClusterKey[] }[]> {
+  const { data, error } = await supabase
+    .from("nss_responses")
+    .select("chosen_clusters, rejected_clusters")
+    .eq("submission_id", submissionId);
+
+  if (error) throw error;
+  return data as { chosen_clusters: ClusterKey[]; rejected_clusters: ClusterKey[] }[];
+}
+
 export async function listTeamSubmissions(
   supabase: SupabaseClient,
   currentUserId: string,
@@ -161,7 +172,7 @@ export async function listTeamSubmissions(
     .from("nss_submissions")
     .select("*")
     .neq("user_id", currentUserId)
-    .not("manager_report", "is", null)
+    .not("report_data", "is", null)
     .order("updated_at", { ascending: false });
 
   if (error) throw error;

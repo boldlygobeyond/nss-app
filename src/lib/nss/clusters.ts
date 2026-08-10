@@ -31,6 +31,19 @@ export const CLUSTER_LABELS: Record<ClusterKey, string> = {
   Recognition: "Recognition & Value",
 };
 
+// Fixed display order for the favorability chart — alphabetical by label.
+// Charts must render clusters in this same order for every user so they're
+// directly comparable to each other and over time.
+export const CHART_ORDER: ClusterKey[] = [
+  "Agency",
+  "Belonging",
+  "Stability",
+  "Ecosystem",
+  "Connections",
+  "Purpose",
+  "Recognition",
+];
+
 export const CLUSTER_COLORS: Record<ClusterKey, string> = {
   Agency: "#6366f1",
   Belonging: "#8b5cf6",

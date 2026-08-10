@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { fetchQuestions, type SurveyQuestion } from "@/lib/nss/questions";
@@ -10,14 +10,17 @@ import {
   selectAdaptiveBlock,
   initTally,
   recordAnswer,
-  hasTerminationSignal,
   tallyToScores,
   getTopNeeds,
   type Tally,
-  type TopNeed,
 } from "@/lib/nss/surveyEngine";
-import { CLUSTER_LABELS } from "@/lib/nss/clusters";
-import { createSubmission, updateSubmissionProgress, finishSubmission, insertResponse } from "@/lib/nss/api";
+import {
+  createSubmission,
+  updateSubmissionProgress,
+  finishSubmission,
+  insertResponse,
+  findInProgressSubmission,
+} from "@/lib/nss/api";
 import NovaGreeting from "@/components/survey/NovaGreeting";
 import QuestionCard from "@/components/survey/QuestionCard";
 import ProgressIndicator from "@/components/survey/ProgressIndicator";
@@ -25,7 +28,6 @@ import ProgressIndicator from "@/components/survey/ProgressIndicator";
 const STORAGE_KEY = "nss_survey_state";
 const STATE_VERSION = 1;
 const HARD_STOP = 50;
-const CALIBRATION_SIZE = 21;
 
 interface AnsweredDetail {
   question_id: number;
@@ -79,12 +81,10 @@ function sequenceFromIds(questions: SurveyQuestion[], ids: number[]): SurveyQues
   return ids.map((id) => map[id]).filter(Boolean);
 }
 
-type Phase = "loading" | "greeting" | "survey" | "completing" | "done";
+type Phase = "loading" | "greeting" | "survey" | "completing";
 
 export default function SurveyClient() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const isResume = searchParams.get("resume") === "true";
 
   const supabase = useRef(createClient()).current;
 
@@ -106,7 +106,6 @@ export default function SurveyClient() {
   const [questionsAnswered, setQuestionsAnswered] = useState(0);
   const [answeredDetails, setAnsweredDetails] = useState<AnsweredDetail[]>([]);
   const [lastQuestionId, setLastQuestionId] = useState<number | null>(null);
-  const [finalTopNeeds, setFinalTopNeeds] = useState<TopNeed[]>([]);
 
   const currentQuestion = sequence[questionIndex] || null;
 
@@ -120,12 +119,24 @@ export default function SurveyClient() {
       ]);
       if (cancelled) return;
 
-      setUserId(userData.user?.id ?? null);
+      const uid = userData.user?.id ?? null;
+      setUserId(uid);
       setUserEmail(userData.user?.email ?? null);
       setQuestions(qs);
 
-      const saved = isResume ? loadSavedState() : null;
-      if (saved?.sequenceIds?.length) {
+      // The server's own record of this user's in-progress submission (if
+      // any) is the source of truth for *whose* progress this is —
+      // localStorage is keyed globally per-browser, not per-account, so a
+      // previous person's abandoned attempt on this same browser would
+      // otherwise get silently inherited by whoever logs in next.
+      const inProgress = uid ? await findInProgressSubmission(supabase, uid) : null;
+      if (cancelled) return;
+
+      // Same-browser resume: fast path, works offline of any server round
+      // trip — but only trust it once it's confirmed to be *this* user's
+      // own submission.
+      const saved = loadSavedState();
+      if (saved?.sequenceIds?.length && saved.submissionId && saved.submissionId === inProgress?.id) {
         setSequence(sequenceFromIds(qs, saved.sequenceIds));
         setUsedIds(new Set(saved.sequenceIds));
         setSubmissionId(saved.submissionId);
@@ -137,16 +148,42 @@ export default function SurveyClient() {
         setAnsweredDetails(saved.answeredDetails);
         setIsSharpened(saved.isSharpened);
         setPhase("survey");
-      } else {
-        setPhase("greeting");
+        return;
       }
+      if (saved) localStorage.removeItem(STORAGE_KEY);
+
+      // Cross-device/session resume: no (trustworthy) local copy — new
+      // browser, cleared storage, someone else's leftover state — but the
+      // server still has an in-progress submission for this account;
+      // rebuild playable state from it rather than restarting from question
+      // one. answeredDetails/isSharpened aren't persisted server-side, but
+      // neither is ever read again after this point (reports are built from
+      // win_loss_tally/top_needs/scores, not from this array), so empty/
+      // false is exact, not a lossy approximation. questionIndex ===
+      // questionsAnswered always holds at rest: both start at 0 and
+      // increment together on every answer.
+      if (inProgress?.question_sequence?.length) {
+        setSequence(sequenceFromIds(qs, inProgress.question_sequence));
+        setUsedIds(new Set(inProgress.question_sequence));
+        setSubmissionId(inProgress.id);
+        setUserName(inProgress.respondent_name);
+        setUserPronouns(inProgress.pronouns ?? "");
+        setTally(inProgress.win_loss_tally);
+        setQuestionIndex(inProgress.questions_answered);
+        setQuestionsAnswered(inProgress.questions_answered);
+        setAnsweredDetails([]);
+        setIsSharpened(false);
+        setPhase("survey");
+        return;
+      }
+
+      setPhase("greeting");
     }
     bootstrap();
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isResume]);
+  }, []);
 
   // ── Auto-save to localStorage ─────────────────────────────────────────────
   useEffect(() => {
@@ -229,10 +266,9 @@ export default function SurveyClient() {
       }
 
       localStorage.removeItem(STORAGE_KEY);
-      setFinalTopNeeds(topNeeds);
-      setTimeout(() => setPhase("done"), 1400);
+      router.push(submissionId ? `/survey/report/${submissionId}` : "/");
     },
-    [submissionId, supabase],
+    [submissionId, supabase, router],
   );
 
   // ── Answer handler ─────────────────────────────────────────────────────────
@@ -279,16 +315,6 @@ export default function SurveyClient() {
       }
 
       if (newAnswered >= HARD_STOP) {
-        finishSurvey(newTally, newAnswered, sequence);
-        return;
-      }
-
-      if (newAnswered === CALIBRATION_SIZE && hasTerminationSignal(newTally, newAnswered)) {
-        finishSurvey(newTally, newAnswered, sequence);
-        return;
-      }
-
-      if (newAnswered > CALIBRATION_SIZE && (newAnswered - CALIBRATION_SIZE) % 7 === 0 && hasTerminationSignal(newTally, newAnswered)) {
         finishSurvey(newTally, newAnswered, sequence);
         return;
       }
@@ -362,32 +388,6 @@ export default function SurveyClient() {
     }
   }, [isSharpened, questionIndex]);
 
-  const handleSaveAndExit = useCallback(async () => {
-    persistLocalState({
-      submissionId,
-      userName,
-      userPronouns,
-      sequenceIds: sequence.map((q) => q.id),
-      questionIndex,
-      tally,
-      questionsAnswered,
-      answeredDetails,
-      isSharpened,
-    });
-    if (submissionId) {
-      try {
-        await updateSubmissionProgress(supabase, submissionId, {
-          tally,
-          questionSequence: sequence.map((q) => q.id),
-          questionsAnswered,
-        });
-      } catch {
-        // best-effort
-      }
-    }
-    router.push("/");
-  }, [submissionId, userName, userPronouns, sequence, questionIndex, tally, questionsAnswered, answeredDetails, isSharpened, supabase, router]);
-
   const handleGreetingBack = () => {
     if (greetingStep === 0) router.push("/");
     else setGreetingStep((s) => s - 1);
@@ -428,49 +428,9 @@ export default function SurveyClient() {
     );
   }
 
-  if (phase === "done") {
-    const topThree = finalTopNeeds.slice(0, 3);
-    return (
-      <div className="flex-1 max-w-2xl w-full mx-auto px-4 py-12">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center">
-          <h1 className="font-heading text-2xl md:text-3xl font-semibold text-foreground mb-3">
-            Thank you, {userName}.
-          </h1>
-          <p className="text-muted-foreground mb-10">
-            Here&apos;s a first look at your top needs signals. Questions answered: {questionsAnswered}.
-          </p>
-          <div className="space-y-3 text-left mb-10">
-            {topThree.map((need) => (
-              <div key={need.cluster} className="bg-card border border-border/50 rounded-xl p-4 flex items-center justify-between">
-                <span className="font-medium text-foreground">{CLUSTER_LABELS[need.cluster]}</span>
-                <span className="text-primary font-semibold">{Math.round(need.winRate * 100)}%</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-col items-center gap-3">
-            {submissionId && (
-              <button
-                onClick={() => router.push(`/reports/${submissionId}`)}
-                className="h-12 px-8 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground transition-colors"
-              >
-                View my full report
-              </button>
-            )}
-            <button
-              onClick={() => router.push("/")}
-              className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
-            >
-              Return home
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex-1 max-w-3xl w-full mx-auto px-4 py-6 flex flex-col">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3">
         <button
           onClick={handleBack}
           className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -479,12 +439,6 @@ export default function SurveyClient() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
           Back
-        </button>
-        <button
-          onClick={handleSaveAndExit}
-          className="text-sm text-muted-foreground hover:text-foreground transition-colors border border-border/50 rounded-lg px-3 py-1.5"
-        >
-          Save &amp; Exit
         </button>
       </div>
 

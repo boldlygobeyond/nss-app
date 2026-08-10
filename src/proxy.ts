@@ -1,7 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/auth", "/api/nss/notify-new-user"];
+const EXACT_PUBLIC_PATHS = ["/"];
+const PUBLIC_PATH_PREFIXES = ["/login", "/auth", "/api/nss/notify-new-user", "/api/nss/lead-signup"];
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -29,14 +30,17 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isPublicPath = PUBLIC_PATHS.some((p) => request.nextUrl.pathname.startsWith(p));
+  const isPublicPath =
+    EXACT_PUBLIC_PATHS.includes(request.nextUrl.pathname) ||
+    PUBLIC_PATH_PREFIXES.some((p) => request.nextUrl.pathname.startsWith(p));
 
   if (!user && !isPublicPath) {
     if (request.nextUrl.pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = "/";
+    url.search = "";
     return NextResponse.redirect(url);
   }
 

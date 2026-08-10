@@ -74,7 +74,7 @@ export default function ManagerDashboardPage() {
                           <p className="text-xs text-muted-foreground">{formatDate(s.updated_at)}</p>
                         </div>
                       </div>
-                      <Link href={`/reports/${s.id}?tab=manager`}>
+                      <Link href={`/reports/${s.id}`}>
                         <button className="text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors">
                           View
                         </button>
