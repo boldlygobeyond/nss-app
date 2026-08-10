@@ -2,17 +2,19 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { FileText, Loader2, Users } from "lucide-react";
+import { FileText, Loader2, ShieldAlert, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { listTeamSubmissions, type NssSubmission } from "@/lib/nss/api";
+import { getMyProfile } from "@/lib/nss/userProfiles";
+import { listAllSubmissions, type NssSubmission } from "@/lib/nss/api";
 import GlobalHeader from "@/components/GlobalHeader";
 
 function formatDate(ts: string) {
   return new Date(ts).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-export default function ManagerDashboardPage() {
+export default function AllUserReportsPage() {
   const [loading, setLoading] = useState(true);
+  const [authorized, setAuthorized] = useState(false);
   const [submissions, setSubmissions] = useState<NssSubmission[]>([]);
 
   useEffect(() => {
@@ -21,8 +23,16 @@ export default function ManagerDashboardPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user?.email) return;
-      const rows = await listTeamSubmissions(supabase, user.email);
+      if (!user) return;
+
+      const myProfile = await getMyProfile(supabase, user.id);
+      if (myProfile?.role !== "admin") {
+        setLoading(false);
+        return;
+      }
+
+      setAuthorized(true);
+      const rows = await listAllSubmissions(supabase);
       setSubmissions(rows);
       setLoading(false);
     };
@@ -39,17 +49,22 @@ export default function ManagerDashboardPage() {
     <div className="min-h-screen bg-background flex flex-col">
       <GlobalHeader />
       <div className="max-w-2xl mx-auto px-6 py-12 w-full">
-        <h1 className="font-heading text-2xl font-bold text-foreground mb-1">Manager Dashboard</h1>
-        <p className="text-sm text-muted-foreground mb-8">Reports shared by your team, direct and indirect.</p>
+        <h1 className="font-heading text-2xl font-bold text-foreground mb-1">All User Reports</h1>
+        <p className="text-sm text-muted-foreground mb-8">Every generated report across the company.</p>
 
         {loading ? (
           <div className="flex items-center justify-center min-h-[30vh]">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
+        ) : !authorized ? (
+          <div className="bg-card border border-border/50 rounded-2xl p-10 text-center">
+            <ShieldAlert className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+            <p className="text-muted-foreground text-sm">You don&apos;t have access to this page.</p>
+          </div>
         ) : submissions.length === 0 ? (
           <div className="bg-card border border-border/50 rounded-2xl p-10 text-center">
             <Users className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-40" />
-            <p className="text-muted-foreground text-sm">No reports from your team yet.</p>
+            <p className="text-muted-foreground text-sm">No reports have been generated yet.</p>
           </div>
         ) : (
           <div className="space-y-8">

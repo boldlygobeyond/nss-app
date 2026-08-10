@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Home, Menu, X, Sun, Moon, LogOut, FileText, Users, Settings } from "lucide-react";
+import { Home, Menu, X, Sun, Moon, LogOut, FileText, Files, Users, Settings } from "lucide-react";
 import BgbLogo from "./BgbLogo";
 import BgbStar from "./BgbStar";
 import { useDarkMode } from "@/lib/hooks/useDarkMode";
@@ -140,6 +140,16 @@ export default function GlobalHeader() {
               >
                 <Users className="w-4 h-4 text-muted-foreground" />
                 Manager Dashboard
+              </Link>
+            )}
+            {isAdmin && (
+              <Link
+                href="/admin/reports"
+                onClick={() => setMenuOpen(false)}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary transition-colors"
+              >
+                <Files className="w-4 h-4 text-muted-foreground" />
+                All User Reports
               </Link>
             )}
             {isAdmin && (

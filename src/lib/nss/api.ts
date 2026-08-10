@@ -163,15 +163,38 @@ export async function listResponsesForSubmission(
 
 export async function listTeamSubmissions(
   supabase: SupabaseClient,
-  currentUserId: string,
+  currentUserEmail: string,
 ): Promise<NssSubmission[]> {
-  // RLS scopes this to the caller's recursive downline automatically
-  // (see nss_submissions_select_via_manager_chain) — excluding the
-  // caller's own row here just keeps "My Reports" and "My Team" distinct.
+  // Explicitly scoped to the caller's recursive downline via the same RPC
+  // the RLS policy (nss_submissions_select_via_manager_chain) uses
+  // internally, rather than relying on RLS alone to filter the plain
+  // select — an admin's separate "see everything" RLS policy would
+  // otherwise leak the whole company into this manager-only view.
+  const { data: subordinates, error: subError } = await supabase.rpc("get_subordinate_emails", {
+    root_email: currentUserEmail,
+  });
+  if (subError) throw subError;
+
+  const emails = ((subordinates ?? []) as { email: string }[]).map((r) => r.email);
+  if (emails.length === 0) return [];
+
   const { data, error } = await supabase
     .from("nss_submissions")
     .select("*")
-    .neq("user_id", currentUserId)
+    .in("user_email", emails)
+    .not("report_data", "is", null)
+    .order("updated_at", { ascending: false });
+
+  if (error) throw error;
+  return data as NssSubmission[];
+}
+
+export async function listAllSubmissions(supabase: SupabaseClient): Promise<NssSubmission[]> {
+  // Relies on the admin branch of nss_submissions_select_own_or_admin —
+  // only meant to be called from an admin-gated page.
+  const { data, error } = await supabase
+    .from("nss_submissions")
+    .select("*")
     .not("report_data", "is", null)
     .order("updated_at", { ascending: false });
 
