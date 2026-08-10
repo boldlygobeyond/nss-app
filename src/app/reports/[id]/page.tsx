@@ -21,11 +21,19 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
     try {
       const res = await fetch(`/api/nss/generate-pdf?id=${id}`);
       if (!res.ok) throw new Error("PDF generation failed");
+
+      // The server decides the filename (it has access to the profile data
+      // needed to build it) — pull it from the response instead of
+      // re-deriving it here, so there's one source of truth.
+      const disposition = res.headers.get("content-disposition") ?? "";
+      const match = disposition.match(/filename\*=UTF-8''([^;]+)/) ?? disposition.match(/filename="([^"]+)"/);
+      const fileName = match ? decodeURIComponent(match[1]) : `${submission?.respondent_name ?? "NSS"}_Report.pdf`;
+
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${(submission?.respondent_name ?? "NSS").replace(/\s+/g, "_")}_Report.pdf`;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       a.remove();

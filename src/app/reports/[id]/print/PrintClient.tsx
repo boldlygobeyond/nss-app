@@ -6,6 +6,8 @@ import Image from "next/image";
 import { Printer } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getSubmission, type NssSubmission } from "@/lib/nss/api";
+import { getMyProfile } from "@/lib/nss/userProfiles";
+import { buildReportFileName } from "@/lib/nss/reportFilename";
 import ReportView from "@/components/reports/ReportView";
 
 export default function PrintClient({ id }: { id: string }) {
@@ -29,7 +31,17 @@ export default function PrintClient({ id }: { id: string }) {
 
   useEffect(() => {
     if (!submission) return;
-    document.title = `${submission.respondent_name.replace(/\s+/g, "_")}_NSS_Report`;
+    const setTitle = async () => {
+      const supabase = createClient();
+      const profile = await getMyProfile(supabase, submission.user_id).catch(() => null);
+      document.title = buildReportFileName(
+        profile?.first_name,
+        profile?.last_name,
+        submission.respondent_name,
+        submission.updated_at,
+      );
+    };
+    setTitle();
   }, [submission]);
 
   useEffect(() => {

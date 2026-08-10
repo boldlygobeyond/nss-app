@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { getSubmission } from "@/lib/nss/api";
+import { getMyProfile } from "@/lib/nss/userProfiles";
 import { renderUrlToPdf } from "@/lib/nss/pdfRender";
+import { buildReportFileName } from "@/lib/nss/reportFilename";
 
 export const maxDuration = 60;
 
@@ -30,12 +32,21 @@ export async function GET(request: Request) {
   const printUrl = `${origin}/reports/${submissionId}/print?pdfMode=1`;
 
   try {
-    const pdfBuffer = await renderUrlToPdf(printUrl, cookieStore.getAll());
-    const fileName = `${submission.respondent_name.replace(/\s+/g, "_")}_NSS_Report.pdf`;
+    const [pdfBuffer, profile] = await Promise.all([
+      renderUrlToPdf(printUrl, cookieStore.getAll()),
+      getMyProfile(supabase, submission.user_id).catch(() => null),
+    ]);
+    const fileName = `${buildReportFileName(
+      profile?.first_name,
+      profile?.last_name,
+      submission.respondent_name,
+      submission.updated_at,
+    )}.pdf`;
+    const asciiFallback = fileName.replace(/[^\x20-\x7E]/g, "_").replace(/"/g, "'");
     return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${fileName}"`,
+        "Content-Disposition": `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
       },
     });
   } catch (error) {
