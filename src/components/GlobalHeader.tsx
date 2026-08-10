@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Home, Menu, X, Sun, Moon, LogOut, FileText, Users, Settings } from "lucide-react";
 import BgbLogo from "./BgbLogo";
+import BgbStar from "./BgbStar";
 import { useDarkMode } from "@/lib/hooks/useDarkMode";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, isManager } from "@/lib/nss/userProfiles";
@@ -52,7 +53,7 @@ export default function GlobalHeader() {
   return (
     <>
       <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-card/95 backdrop-blur-sm flex items-center px-4 border-b border-border/50">
-        <div className="w-20 flex items-center">
+        <div className="w-28 flex items-center">
           {hasMenu ? (
             <button
               onClick={() => setMenuOpen((o) => !o)}
@@ -75,12 +76,25 @@ export default function GlobalHeader() {
         </div>
 
         <div className="flex-1 flex items-center justify-center">
-          <a href="https://boldlygobeyond.com" target="_blank" rel="noopener noreferrer">
+          {hasCompleted ? (
+            <Link href="/">
+              <BgbLogo height={24} />
+            </Link>
+          ) : (
             <BgbLogo height={24} />
-          </a>
+          )}
         </div>
 
-        <div className="w-20 flex items-center justify-end gap-1">
+        <div className="w-28 flex items-center justify-end gap-1">
+          <a
+            href="https://boldlygobeyond.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            aria-label="Boldly Go Beyond website"
+          >
+            <BgbStar size={20} />
+          </a>
           <button
             onClick={() => setIsDark(!isDark)}
             className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"

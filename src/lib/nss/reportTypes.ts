@@ -4,7 +4,7 @@
 
 // Static — not personalized, so generated once here rather than by the LLM.
 export const RIPPLE_INTRO_TEXT =
-  "Needs work as a connected system. Meeting one tends to give way for others to be met.";
+  "Needs work as a connected system. When one need is met, it ripples out into other needs.";
 
 export interface ReportData {
   keyPattern: string;

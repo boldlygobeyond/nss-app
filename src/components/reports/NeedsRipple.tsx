@@ -59,7 +59,7 @@ export default function NeedsRipple({ steps }: { steps: { cluster: string; body:
 
       <div className="flex-1 flex flex-col gap-4">
         {steps.map((step, i) => (
-          <div key={i} className="sm:max-w-xs">
+          <div key={i} className="sm:max-w-xs print:break-inside-avoid">
             <p className="font-heading text-sm font-bold text-primary mb-0.5">{step.cluster}</p>
             <p className="text-sm text-muted-foreground leading-relaxed">{step.body}</p>
           </div>
