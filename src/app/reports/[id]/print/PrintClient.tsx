@@ -92,7 +92,7 @@ export default function PrintClient({ id }: { id: string }) {
         <ReportView
           reportData={submission.report_data}
           scores={submission.scores}
-          respondentName={fullName ?? submission.respondent_name}
+          firstName={submission.respondent_name}
           pronouns={submission.pronouns}
           variant="plain"
         />
