@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState, use } from "react";
-import { Printer, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getSubmission, type NssSubmission } from "@/lib/nss/api";
 import { getMyProfile } from "@/lib/nss/userProfiles";
@@ -139,29 +138,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
           <p className="text-muted-foreground">This person hasn&apos;t generated their report yet.</p>
         </div>
       ) : (
-        <div className="max-w-3xl mx-auto w-full px-6 py-8 relative">
-          <div className="flex lg:hidden gap-2 justify-end mb-4">
-            <button
-              onClick={handleDownloadPdf}
-              disabled={downloadingPdf}
-              className="flex items-center gap-1.5 text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors disabled:opacity-50"
-            >
-              {downloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
-              {downloadingPdf ? "Preparing..." : "Download PDF"}
-            </button>
-          </div>
-
-          <div className="hidden lg:flex lg:flex-col lg:gap-2 lg:absolute lg:left-full lg:ml-6 lg:top-8 lg:w-36">
-            <button
-              onClick={handleDownloadPdf}
-              disabled={downloadingPdf}
-              className="flex items-center gap-1.5 text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors whitespace-nowrap disabled:opacity-50"
-            >
-              {downloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
-              {downloadingPdf ? "Preparing..." : "Download PDF"}
-            </button>
-          </div>
-
+        <div className="max-w-3xl mx-auto w-full px-6 py-8">
           <div className="mb-8">
             <h1 className="font-heading text-2xl md:text-3xl font-bold text-foreground">Needs Signal Report</h1>
             <div className="flex items-baseline justify-between mt-1 mb-4">
@@ -196,7 +173,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
               onClick={handleScheduleCall}
               className="h-12 px-8 text-base rounded-lg border border-border/50 hover:bg-secondary text-foreground transition-colors"
             >
-              Get Your Customized Flight Plan!
+              Get Your Team&apos;s Customized Flight Plan!
             </button>
           </div>
         </div>

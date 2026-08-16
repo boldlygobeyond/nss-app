@@ -20,7 +20,15 @@ const DEV_CHROME_PATH =
 
 async function launchBrowser(): Promise<Browser> {
   if (process.env.NODE_ENV !== "production") {
-    return puppeteer.launch({ executablePath: DEV_CHROME_PATH, headless: true });
+    // Match production's viewport — layouts using vh-based "pin to the
+    // bottom of the page" tricks (the cover page's intro box) render
+    // against whatever viewport is active, and Puppeteer's 800x600 default
+    // doesn't match an A4 page's proportions the way this one does.
+    return puppeteer.launch({
+      executablePath: DEV_CHROME_PATH,
+      headless: true,
+      defaultViewport: { width: 1240, height: 1754, deviceScaleFactor: 1 },
+    });
   }
 
   const chromium = (await import("@sparticuz/chromium")).default;
@@ -60,10 +68,10 @@ function buildFooterTemplate(logoDataUri: string): string {
   // external stylesheet, so every style has to be inline. `pageNumber` is
   // one of the few dynamic values Puppeteer substitutes automatically.
   return `
-    <div style="width:100%; font-size:9px; color:#6b7280; font-family:Arial,Helvetica,sans-serif; padding:0 15mm;">
-      <div style="border-top:1px solid #d1d5db; width:45%; margin:0 auto 6px auto;"></div>
+    <div style="width:100%; font-size:11px; color:#6b7280; font-family:Arial,Helvetica,sans-serif; padding:0 15mm;">
+      <div style="border-top:1px solid #d1d5db; width:45%; margin:0 auto 8px auto;"></div>
       <div style="display:flex; align-items:center; justify-content:space-between;">
-        <img src="${logoDataUri}" style="height:12px;" />
+        <img src="${logoDataUri}" style="height:18px;" />
         <a href="https://boldlygobeyond.com" style="color:#6b7280; text-decoration:none;">www.boldlygobeyond.com</a>
         <span class="pageNumber"></span>
       </div>

@@ -2,15 +2,10 @@ import type { ReactNode } from "react";
 import { Lightbulb } from "lucide-react";
 import { CLUSTER_LABELS, type ClusterKey } from "@/lib/nss/clusters";
 import type { ClusterScore } from "@/lib/nss/surveyEngine";
-import { RIPPLE_INTRO_TEXT, type ReportData } from "@/lib/nss/reportTypes";
+import { INTRO_TEXT, SNAPSHOT_INTRO_TEXT, RIPPLE_INTRO_TEXT, type ReportData } from "@/lib/nss/reportTypes";
+import { CALENDAR_URL } from "@/lib/nss/links";
 import NeedsChart from "./NeedsChart";
 import NeedsRipple from "./NeedsRipple";
-
-const INTRO_TEXT =
-  "Take a look at your Needs Signal Report to understand how your needs might show up in the workplace. Share the report with your manager and have a conversation about what you need from the team to show up as your best each and every day.";
-
-const FLIGHT_PLAN_EMAIL = "first.contact@boldlygobeyond.com";
-const FLIGHT_PLAN_MAILTO = `mailto:${FLIGHT_PLAN_EMAIL}?subject=${encodeURIComponent("Let's Make a Personalized Flight Plan!")}`;
 
 function possessivePronoun(pronouns: string | null | undefined): string {
   const p = pronouns || "";
@@ -63,12 +58,14 @@ export default function ReportView({
   firstName,
   pronouns,
   variant = "card",
+  forPdf = false,
 }: {
   reportData: ReportData | null;
   scores: Record<ClusterKey, ClusterScore> | null;
   firstName: string;
   pronouns?: string | null;
   variant?: "card" | "plain";
+  forPdf?: boolean;
 }) {
   // Also treats a report saved under an older schema version (missing
   // rippleChain) as "not generated" rather than crashing on it — the owner
@@ -87,12 +84,15 @@ export default function ReportView({
 
   return (
     <div className={wrapperClass}>
-      <div className="p-4 rounded-lg bg-secondary/50 border border-border/50 text-sm text-foreground italic leading-relaxed print:break-inside-avoid">
-        {INTRO_TEXT}
-      </div>
+      {!forPdf && (
+        <div className="p-4 rounded-lg bg-secondary/50 border border-border/50 text-sm text-foreground italic leading-relaxed print:break-inside-avoid">
+          {INTRO_TEXT}
+        </div>
+      )}
 
       <div className="print:break-inside-avoid">
         <SectionHeading>Your Current Needs Snapshot</SectionHeading>
+        <p className="text-muted-foreground leading-relaxed mb-4">{SNAPSHOT_INTRO_TEXT}</p>
         <NeedsChart scores={scores} />
       </div>
 
@@ -187,32 +187,29 @@ export default function ReportView({
         ))}
       </div>
 
-      <div className="mt-10 p-4 rounded-lg bg-secondary/50 border border-border/50 print:break-inside-avoid">
-        <p className="font-heading text-base font-semibold text-foreground mb-3 text-center">
-          Ready to decode your system and unlock what&apos;s possible?
-        </p>
-        <p className="text-sm text-foreground italic mb-2">
-          Understanding individual needs is a great first step, but real transformation happens when everyone on
-          the team can see how their needs are interconnected.
-        </p>
-        <p className="text-sm text-foreground italic">
-          Head to{" "}
-          <a
-            href="https://www.boldlygobeyond.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary font-medium hover:underline"
-          >
-            www.boldlygobeyond.com
-          </a>{" "}
-          - or email{" "}
-          <a href={FLIGHT_PLAN_MAILTO} className="text-primary font-medium hover:underline">
-            {FLIGHT_PLAN_EMAIL}
-          </a>{" "}
-          - today to find out how you can map your entire team and reveal shortcuts to take to drive collective
-          impact.
-        </p>
-      </div>
+      {!forPdf && (
+        <div className="mt-10 p-4 rounded-lg bg-secondary/50 border border-border/50 print:break-inside-avoid">
+          <p className="font-heading text-base font-semibold text-foreground mb-3 text-center">
+            Ready to decode your system and unlock what&apos;s possible?
+          </p>
+          <p className="text-sm text-foreground italic mb-2">
+            Understanding individual needs is a great first step, but real transformation happens when everyone on
+            the team can see how their needs are interconnected.
+          </p>
+          <p className="text-sm text-foreground italic">
+            <a
+              href={CALENDAR_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary font-medium hover:underline"
+            >
+              Book a call
+            </a>{" "}
+            with our co-founders today to find out how you can map your entire team and reveal shortcuts to take to
+            drive collective impact.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

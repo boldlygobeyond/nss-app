@@ -8,11 +8,15 @@ import BgbLogo from "./BgbLogo";
 import BgbStar from "./BgbStar";
 import { useDarkMode } from "@/lib/hooks/useDarkMode";
 import { createClient } from "@/lib/supabase/client";
-import { listSubmissionsForUser } from "@/lib/nss/api";
+import { getMyProfile, isManager } from "@/lib/nss/userProfiles";
 
 export default function GlobalHeader() {
   const [isDark, setIsDark] = useDarkMode();
-  const [hasCompleted, setHasCompleted] = useState(false);
+  // Regular end users are one-and-done — once they've taken the NSS
+  // they're just here for their results, so there's no "home" for them to
+  // navigate back to. Only admins/managers, who have other destinations
+  // (their team's reports, Team Setup), get a home link.
+  const [isElevated, setIsElevated] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -21,9 +25,12 @@ export default function GlobalHeader() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) return;
-      const submissions = await listSubmissionsForUser(supabase, user.id);
-      setHasCompleted(submissions.length > 0);
+      if (!user?.email) return;
+      const [profile, managerCheck] = await Promise.all([
+        getMyProfile(supabase, user.id),
+        isManager(supabase, user.email),
+      ]);
+      setIsElevated(profile?.role === "admin" || managerCheck);
     };
     check();
   }, []);
@@ -40,7 +47,7 @@ export default function GlobalHeader() {
     <>
       <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-card/95 backdrop-blur-sm flex items-center px-4 border-b border-border/50">
         <div className="w-28 flex items-center">
-          {hasCompleted && (
+          {isElevated && (
             <Link
               href="/"
               className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
@@ -52,7 +59,7 @@ export default function GlobalHeader() {
         </div>
 
         <div className="flex-1 flex items-center justify-center">
-          {hasCompleted ? (
+          {isElevated ? (
             <Link href="/">
               <BgbLogo height={24} />
             </Link>

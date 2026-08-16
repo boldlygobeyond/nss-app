@@ -48,5 +48,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Could not start your assessment. Please try again." }, { status: 500 });
   }
 
+  // The handle_new_user trigger only copies first_name out of auth metadata
+  // into user_profiles, not last_name — so every signup was silently ending
+  // up with a blank last name despite it being collected right here. Fill
+  // it in directly rather than relying on the trigger for the full name.
+  const { error: nameError } = await supabase
+    .from("user_profiles")
+    .update({ first_name: firstName.trim(), last_name: lastName.trim() })
+    .eq("id", data.user.id);
+  if (nameError) console.warn("[lead-signup] Failed to backfill name on profile:", nameError);
+
   return NextResponse.json({ existingAccount: false, email: trimmedEmail, tokenHash: data.properties.hashed_token });
 }
