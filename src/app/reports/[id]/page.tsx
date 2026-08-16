@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState, use } from "react";
-import { Printer, RefreshCw, Loader2 } from "lucide-react";
+import { Printer, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getSubmission, type NssSubmission } from "@/lib/nss/api";
 import { getMyProfile } from "@/lib/nss/userProfiles";
 import { buildFullName } from "@/lib/nss/reportFilename";
+import { CALENDAR_URL } from "@/lib/nss/links";
 import GlobalHeader from "@/components/GlobalHeader";
 import ReportView from "@/components/reports/ReportView";
 
@@ -69,6 +70,10 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
     },
     [id],
   );
+
+  const handleScheduleCall = () => {
+    window.open(CALENDAR_URL, "_blank", "noopener,noreferrer");
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -144,15 +149,6 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
               {downloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
               {downloadingPdf ? "Preparing..." : "Download PDF"}
             </button>
-            {isOwner && (
-              <button
-                onClick={() => generateReport(submission, true)}
-                className="flex items-center gap-1.5 text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Regenerate
-              </button>
-            )}
           </div>
 
           <div className="hidden lg:flex lg:flex-col lg:gap-2 lg:absolute lg:left-full lg:ml-6 lg:top-8 lg:w-36">
@@ -164,15 +160,6 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
               {downloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
               {downloadingPdf ? "Preparing..." : "Download PDF"}
             </button>
-            {isOwner && (
-              <button
-                onClick={() => generateReport(submission, true)}
-                className="flex items-center gap-1.5 text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors whitespace-nowrap"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Regenerate
-              </button>
-            )}
           </div>
 
           <div className="mb-8">
@@ -196,6 +183,22 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
             firstName={submission.respondent_name}
             pronouns={submission.pronouns}
           />
+
+          <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
+              className="h-12 px-8 text-base rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed text-primary-foreground shadow-md transition-colors"
+            >
+              {downloadingPdf ? "Preparing..." : "Download PDF"}
+            </button>
+            <button
+              onClick={handleScheduleCall}
+              className="h-12 px-8 text-base rounded-lg border border-border/50 hover:bg-secondary text-foreground transition-colors"
+            >
+              Get Your Customized Flight Plan!
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -4,9 +4,8 @@ import { use, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { getSubmission } from "@/lib/nss/api";
+import { CALENDAR_URL } from "@/lib/nss/links";
 import GlobalHeader from "@/components/GlobalHeader";
-
-const CALENDAR_URL = "https://calendar.app.google/d2Pr6FK1aaZ5Mbmy8";
 
 const BENTO_CARDS = [
   {

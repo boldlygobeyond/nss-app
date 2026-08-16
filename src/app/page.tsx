@@ -4,9 +4,10 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { Loader2 } from "lucide-react";
+import { Loader2, FileText, Users, Files, Settings, RefreshCw, type LucideIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { findInProgressSubmission, deleteSubmission, listSubmissionsForUser, type NssSubmission } from "@/lib/nss/api";
+import { listSubmissionsForUser } from "@/lib/nss/api";
+import { isManager } from "@/lib/nss/userProfiles";
 import GlobalHeader from "@/components/GlobalHeader";
 import BgbLogo from "@/components/BgbLogo";
 import LeadCaptureModal from "@/components/LeadCaptureModal";
@@ -92,14 +93,82 @@ function LandingPage() {
   );
 }
 
+function AdminHomescreen({
+  firstName,
+  isAdmin,
+  isManagerRole,
+}: {
+  firstName: string | null;
+  isAdmin: boolean;
+  isManagerRole: boolean;
+}) {
+  const cards: { href: string; label: string; description: string; icon: LucideIcon }[] = [
+    { href: "/reports", label: "My Reports", description: "View your own Needs Signal Report.", icon: FileText },
+    isManagerRole && {
+      href: "/manager",
+      label: "Manager Dashboard",
+      description: "Reports from your direct and indirect team.",
+      icon: Users,
+    },
+    isAdmin && {
+      href: "/admin/reports",
+      label: "All User Reports",
+      description: "Every generated report across the company.",
+      icon: Files,
+    },
+    isAdmin && {
+      href: "/admin/users",
+      label: "Team Setup",
+      description: "Manage roles and the reporting hierarchy.",
+      icon: Settings,
+    },
+    {
+      href: "/survey",
+      label: "Retake the Survey",
+      description: "Start a new attempt, useful for testing changes.",
+      icon: RefreshCw,
+    },
+  ].filter((c): c is { href: string; label: string; description: string; icon: LucideIcon } => !!c);
+
+  return (
+    <div className="max-w-2xl mx-auto px-6 py-12 w-full">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+        <h1 className="font-heading text-3xl md:text-4xl font-bold text-foreground mb-2">
+          Welcome{firstName ? `, ${firstName}` : ""}.
+        </h1>
+        <p className="text-muted-foreground text-lg mb-10">
+          See the signals. Decode the system. Unlock what&apos;s possible.
+        </p>
+
+        <div className="grid sm:grid-cols-2 gap-4">
+          {cards.map((card) => (
+            <Link
+              key={card.href}
+              href={card.href}
+              className="bg-card border border-border/50 rounded-2xl p-6 flex flex-col gap-3 hover:border-primary/40 hover:shadow-md transition-all"
+            >
+              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <card.icon className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="font-heading font-semibold text-foreground">{card.label}</p>
+                <p className="text-sm text-muted-foreground mt-1">{card.description}</p>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function AuthenticatedHome() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [firstName, setFirstName] = useState<string | null>(null);
-  const [nssEnabled, setNssEnabled] = useState(true);
-  const [canResume, setCanResume] = useState(false);
   const [hasCompleted, setHasCompleted] = useState(false);
-  const [inProgressSubmission, setInProgressSubmission] = useState<NssSubmission | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isManagerRole, setIsManagerRole] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -109,65 +178,49 @@ function AuthenticatedHome() {
         const {
           data: { user },
         } = await supabase.auth.getUser();
-        if (!user) return;
+        if (!user?.email) return;
 
-        const [{ data: profile }, inProgress, completedSubmissions] = await Promise.all([
-          supabase.from("user_profiles").select("first_name, nss_enabled").eq("id", user.id).maybeSingle(),
-          findInProgressSubmission(supabase, user.id),
+        const [{ data: profile }, completedSubmissions, managerCheck] = await Promise.all([
+          supabase.from("user_profiles").select("first_name, nss_enabled, role").eq("id", user.id).maybeSingle(),
           listSubmissionsForUser(supabase, user.id),
+          isManager(supabase, user.email),
         ]);
 
         const enabled = profile?.nss_enabled !== false;
-        const hasCompleted = completedSubmissions.length > 0;
+        const completed = completedSubmissions.length > 0;
+        const admin = profile?.role === "admin";
+        const elevated = admin || managerCheck;
 
-        // The homepage is only for people who already have a result to look
-        // at — anyone who hasn't finished (started or not, admins included
-        // so they can test the flow themselves) goes straight into the
-        // survey instead of landing on a "Launch" button first.
-        if (enabled && !hasCompleted) {
+        // Anyone who hasn't finished (started or not) goes straight into the
+        // survey instead of landing on a homepage first — admins included,
+        // so they can test the flow themselves.
+        if (enabled && !completed) {
           redirected = true;
           router.replace("/survey");
           return;
         }
 
-        setFirstName(profile?.first_name ?? null);
-        setNssEnabled(enabled);
-        setHasCompleted(hasCompleted);
-
-        let hasLocalProgress = false;
-        try {
-          const raw = localStorage.getItem("nss_survey_state");
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            hasLocalProgress = (parsed.questionsAnswered || 0) > 0;
-          }
-        } catch {
-          // ignore
+        // Regular end users are one-and-done — once completed there is
+        // nothing else for them to do here, so skip this page entirely and
+        // go straight into their report. Admins/managers still land here
+        // since they have other destinations (their team's reports, Team
+        // Setup, retaking the survey to test changes).
+        if (completed && !elevated) {
+          redirected = true;
+          router.replace(`/reports/${completedSubmissions[0].id}`);
+          return;
         }
 
-        const hasServerProgress = !!inProgress && (inProgress.questions_answered || 0) > 0;
-        setInProgressSubmission(inProgress);
-        setCanResume(hasLocalProgress || hasServerProgress);
+        setFirstName(profile?.first_name ?? null);
+        setHasCompleted(completed);
+        setIsAdmin(admin);
+        setIsManagerRole(managerCheck);
       } finally {
         if (!redirected) setLoading(false);
       }
     };
     loadData();
   }, [router]);
-
-  const handleStartOver = async () => {
-    localStorage.removeItem("nss_survey_state");
-    if (inProgressSubmission) {
-      try {
-        const supabase = createClient();
-        await deleteSubmission(supabase, inProgressSubmission.id);
-      } catch {
-        // ignore — worst case the stale row lingers and can be cleared manually
-      }
-      setInProgressSubmission(null);
-    }
-    setCanResume(false);
-  };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -177,73 +230,16 @@ function AuthenticatedHome() {
         <div className="flex items-center justify-center min-h-[60vh]">
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
+      ) : hasCompleted ? (
+        <AdminHomescreen firstName={firstName} isAdmin={isAdmin} isManagerRole={isManagerRole} />
       ) : (
         <div className="max-w-2xl mx-auto px-6 py-12 w-full">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-            <h1 className="font-heading text-3xl md:text-4xl font-bold text-foreground mb-2">
-              Welcome{firstName ? `, ${firstName}` : ""}.
-            </h1>
-            <p className="text-muted-foreground text-lg mb-10">
-              See the signals. Decode the system. Unlock what&apos;s possible.
-            </p>
-
-            {nssEnabled && (
-              <div className="mb-6">
-                {canResume ? (
-                  <div className="flex flex-col gap-2">
-                    {hasCompleted && (
-                      <p className="text-sm text-muted-foreground mb-2">
-                        Want to take a look at your reports? Head to{" "}
-                        <Link
-                          href="/reports"
-                          className="underline underline-offset-2 hover:text-foreground transition-colors"
-                        >
-                          View My Reports
-                        </Link>
-                        .
-                      </p>
-                    )}
-                    <Link href="/survey">
-                      <button className="h-12 px-8 text-base rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-md transition-colors">
-                        Resume the Needs Signal Survey
-                      </button>
-                    </Link>
-                    <button
-                      onClick={handleStartOver}
-                      className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors text-left"
-                    >
-                      Or start from the beginning
-                    </button>
-                  </div>
-                ) : hasCompleted ? (
-                  <div className="flex flex-col gap-4">
-                    <p className="text-foreground font-medium">You have a report ready to view!</p>
-                    <Link href="/reports">
-                      <button className="h-12 px-8 text-base rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-md transition-colors">
-                        View My Reports
-                      </button>
-                    </Link>
-                    <p className="text-sm text-muted-foreground italic">
-                      Want to take the Needs Signal Survey again? Click{" "}
-                      <Link
-                        href="/survey"
-                        className="underline underline-offset-2 hover:text-foreground transition-colors"
-                      >
-                        here
-                      </Link>
-                      .
-                    </p>
-                  </div>
-                ) : (
-                  <Link href="/survey">
-                    <button className="h-12 px-8 text-base rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-md transition-colors">
-                      Launch the Needs Signal Survey
-                    </button>
-                  </Link>
-                )}
-              </div>
-            )}
-          </motion.div>
+          <h1 className="font-heading text-3xl md:text-4xl font-bold text-foreground mb-2">
+            Welcome{firstName ? `, ${firstName}` : ""}.
+          </h1>
+          <p className="text-muted-foreground text-lg">
+            The Needs Signal Survey isn&apos;t currently available for your account.
+          </p>
         </div>
       )}
     </div>

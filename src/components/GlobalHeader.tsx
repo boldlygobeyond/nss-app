@@ -3,24 +3,17 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Home, Menu, X, Sun, Moon, LogOut, FileText, Files, Users, Settings } from "lucide-react";
+import { Home, Sun, Moon, LogOut } from "lucide-react";
 import BgbLogo from "./BgbLogo";
 import BgbStar from "./BgbStar";
 import { useDarkMode } from "@/lib/hooks/useDarkMode";
 import { createClient } from "@/lib/supabase/client";
-import { getMyProfile, isManager } from "@/lib/nss/userProfiles";
 import { listSubmissionsForUser } from "@/lib/nss/api";
 
 export default function GlobalHeader() {
-  const [menuOpen, setMenuOpen] = useState(false);
   const [isDark, setIsDark] = useDarkMode();
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [showManagerLink, setShowManagerLink] = useState(false);
   const [hasCompleted, setHasCompleted] = useState(false);
   const router = useRouter();
-
-  const hasMenu = isAdmin || showManagerLink;
-  const showHomeIcon = !hasMenu && hasCompleted;
 
   useEffect(() => {
     const check = async () => {
@@ -28,21 +21,14 @@ export default function GlobalHeader() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user?.email) return;
-      const [profile, managerCheck, submissions] = await Promise.all([
-        getMyProfile(supabase, user.id),
-        isManager(supabase, user.email),
-        listSubmissionsForUser(supabase, user.id),
-      ]);
-      setIsAdmin(profile?.role === "admin");
-      setShowManagerLink(managerCheck);
+      if (!user) return;
+      const submissions = await listSubmissionsForUser(supabase, user.id);
       setHasCompleted(submissions.length > 0);
     };
     check();
   }, []);
 
   const handleLogout = async () => {
-    setMenuOpen(false);
     localStorage.removeItem("nss_survey_state");
     const supabase = createClient();
     await supabase.auth.signOut();
@@ -54,24 +40,14 @@ export default function GlobalHeader() {
     <>
       <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-card/95 backdrop-blur-sm flex items-center px-4 border-b border-border/50">
         <div className="w-28 flex items-center">
-          {hasMenu ? (
-            <button
-              onClick={() => setMenuOpen((o) => !o)}
+          {hasCompleted && (
+            <Link
+              href="/"
               className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-              aria-label="Menu"
+              aria-label="Home"
             >
-              {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-          ) : (
-            showHomeIcon && (
-              <Link
-                href="/"
-                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                aria-label="Home"
-              >
-                <Home className="w-5 h-5" />
-              </Link>
-            )
+              <Home className="w-5 h-5" />
+            </Link>
           )}
         </div>
 
@@ -111,60 +87,6 @@ export default function GlobalHeader() {
           </button>
         </div>
       </header>
-
-      {menuOpen && hasMenu && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-          <div className="fixed top-14 left-3 z-50 bg-card border border-border/50 rounded-xl shadow-lg py-1.5 w-52">
-            <Link
-              href="/"
-              onClick={() => setMenuOpen(false)}
-              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary transition-colors"
-            >
-              <Home className="w-4 h-4 text-muted-foreground" />
-              Home
-            </Link>
-            <Link
-              href="/reports"
-              onClick={() => setMenuOpen(false)}
-              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary transition-colors"
-            >
-              <FileText className="w-4 h-4 text-muted-foreground" />
-              My Reports
-            </Link>
-            {showManagerLink && (
-              <Link
-                href="/manager"
-                onClick={() => setMenuOpen(false)}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary transition-colors"
-              >
-                <Users className="w-4 h-4 text-muted-foreground" />
-                Manager Dashboard
-              </Link>
-            )}
-            {isAdmin && (
-              <Link
-                href="/admin/reports"
-                onClick={() => setMenuOpen(false)}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary transition-colors"
-              >
-                <Files className="w-4 h-4 text-muted-foreground" />
-                All User Reports
-              </Link>
-            )}
-            {isAdmin && (
-              <Link
-                href="/admin/users"
-                onClick={() => setMenuOpen(false)}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary transition-colors"
-              >
-                <Settings className="w-4 h-4 text-muted-foreground" />
-                Team Setup
-              </Link>
-            )}
-          </div>
-        </>
-      )}
 
       <div className="h-14" />
     </>
