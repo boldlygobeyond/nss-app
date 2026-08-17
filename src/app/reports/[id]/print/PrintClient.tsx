@@ -116,7 +116,7 @@ export default function PrintClient({ id }: { id: string }) {
                   href={CALENDAR_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="h-12 px-8 text-base rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-md transition-colors inline-flex items-center justify-center"
+                  className="h-12 px-8 text-base rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-md print:shadow-none transition-colors inline-flex items-center justify-center"
                 >
                   Get Your Team&apos;s Customized Flight Plan!
                 </a>

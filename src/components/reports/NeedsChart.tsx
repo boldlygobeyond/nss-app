@@ -20,7 +20,7 @@ export default function NeedsChart({ scores }: { scores: Record<ClusterKey, Clus
               <span className="w-44 shrink-0 text-sm font-medium text-foreground">{CLUSTER_LABELS[cluster]}</span>
               <div className="relative flex-1 h-1.5 rounded-full bg-secondary">
                 <div
-                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-primary shadow-sm"
+                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-primary shadow-sm print:shadow-none"
                   style={{ left: `${pct}%` }}
                 />
               </div>
