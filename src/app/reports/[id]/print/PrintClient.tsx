@@ -73,23 +73,28 @@ export default function PrintClient({ id }: { id: string }) {
           </div>
         )}
 
-        {!isPdfCapture && (
-          <div className="mb-8 print:break-after-avoid">
-            <Image src="/logo/bgb-line-all-color.png" alt="Boldly Go Beyond" width={198} height={20} className="mb-6" />
-            <h1 className="font-heading text-2xl md:text-3xl font-bold text-foreground mb-1">Needs Signal Report</h1>
-            <div className="flex items-baseline justify-between">
-              <span className="text-lg md:text-xl font-semibold text-foreground">{fullName ?? submission.respondent_name}</span>
-              <span className="text-muted-foreground text-base">
-                {new Date(submission.updated_at).toLocaleDateString("en-US", {
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </span>
-            </div>
-            <div className="h-0.5 bg-accent rounded-full mt-4" />
+        <div className="mb-8 print:break-after-avoid">
+          <Image
+            src="/logo/bgb-line-all-color.png"
+            alt="Boldly Go Beyond"
+            width={198}
+            height={20}
+            priority
+            className="mb-6"
+          />
+          <h1 className="font-heading text-2xl md:text-3xl font-bold text-foreground mb-1">Needs Signal Report</h1>
+          <div className="flex items-baseline justify-between">
+            <span className="text-lg md:text-xl font-semibold text-foreground">{fullName ?? submission.respondent_name}</span>
+            <span className="text-muted-foreground text-base">
+              {new Date(submission.updated_at).toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}
+            </span>
           </div>
-        )}
+          <div className="h-0.5 bg-accent rounded-full mt-4" />
+        </div>
 
         <ReportView
           reportData={submission.report_data}

@@ -96,6 +96,12 @@ export default function ReportView({
         <NeedsChart scores={scores} />
       </div>
 
+      {forPdf && (
+        <div className="mt-6 p-4 rounded-lg bg-secondary/50 border border-border/50 text-sm text-foreground italic leading-relaxed print:break-inside-avoid">
+          {INTRO_TEXT}
+        </div>
+      )}
+
       <div className="print:break-inside-avoid print:break-before-page">
         <SectionHeading>Prioritizing Your Needs</SectionHeading>
         <p className="text-muted-foreground leading-relaxed mb-4">
