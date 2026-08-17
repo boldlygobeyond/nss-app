@@ -131,8 +131,9 @@ export async function POST(request: Request) {
     if (submission.user_email) {
       try {
         const cookieStore = await cookies();
-        const url = `${origin}/reports/${submissionId}/print?pdfMode=1`;
-        const pdfBuffer = await renderReportPdf({ url, cookies: cookieStore.getAll() });
+        const coverUrl = `${origin}/reports/${submissionId}/print/cover`;
+        const bodyUrl = `${origin}/reports/${submissionId}/print?pdfMode=1`;
+        const pdfBuffer = await renderReportPdf({ coverUrl, bodyUrl, cookies: cookieStore.getAll() });
 
         await cacheReportPdf(createAdminClient(), submissionId, pdfBuffer).catch((cacheError) =>
           console.warn("[generate-reports] PDF cache failed:", cacheError),

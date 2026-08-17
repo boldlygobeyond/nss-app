@@ -43,8 +43,9 @@ export async function GET(request: Request) {
     let pdfBuffer = cachedPdf;
     if (!pdfBuffer) {
       const cookieStore = await cookies();
-      const url = `${origin}/reports/${submissionId}/print?pdfMode=1`;
-      pdfBuffer = await renderReportPdf({ url, cookies: cookieStore.getAll() });
+      const coverUrl = `${origin}/reports/${submissionId}/print/cover`;
+      const bodyUrl = `${origin}/reports/${submissionId}/print?pdfMode=1`;
+      pdfBuffer = await renderReportPdf({ coverUrl, bodyUrl, cookies: cookieStore.getAll() });
       await cacheReportPdf(admin, submissionId, pdfBuffer).catch((cacheError) =>
         console.warn("[generate-pdf] PDF cache failed:", cacheError),
       );
