@@ -136,9 +136,12 @@ function AdminHomescreen({
         <h1 className="font-heading text-3xl md:text-4xl font-bold text-foreground mb-2">
           Welcome{firstName ? `, ${firstName}` : ""}.
         </h1>
-        <p className="text-muted-foreground text-lg mb-10">
+        <p className="text-muted-foreground text-lg mb-3">
           See the signals. Decode the system. Unlock what&apos;s possible.
         </p>
+        <span className="inline-block text-xs font-semibold tracking-wide uppercase text-primary bg-primary/10 px-3 py-1 rounded-full mb-10">
+          Admin Portal
+        </span>
 
         <div className="grid sm:grid-cols-2 gap-4">
           {cards.map((card) => (
