@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { buildReportPrompt } from "@/lib/nss/reportPrompts";
 import { archiveReportToDrive } from "@/lib/nss/googleDrive";
+import { notifyCrmLead } from "@/lib/nss/crm";
 import { renderReportPdf } from "@/lib/nss/pdfRender";
 import { cacheReportPdf } from "@/lib/nss/pdfStorage";
 import { computePairwiseMatchups, type TopNeed } from "@/lib/nss/surveyEngine";
@@ -147,6 +148,18 @@ export async function POST(request: Request) {
           .from("nss_submissions")
           .update({ pdf_url: archived.pdfUrl, pdf_drive_id: archived.pdfDriveId })
           .eq("id", submissionId);
+
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("first_name, last_name")
+          .eq("id", submission.user_id)
+          .maybeSingle();
+        await notifyCrmLead({
+          firstName: profile?.first_name || firstName,
+          lastName: profile?.last_name || "",
+          email: submission.user_email as string,
+          reportUrl: archived.pdfUrl,
+        });
       } catch (driveError) {
         // Best-effort — Drive archival is a backup copy, not required for the
         // in-app report to work, so don't fail the request over it.

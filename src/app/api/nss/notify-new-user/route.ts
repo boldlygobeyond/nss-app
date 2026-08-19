@@ -1,39 +1,5 @@
 import { NextResponse } from "next/server";
-
-// Best-effort — CRM lead capture is a side effect of onboarding, not a
-// requirement for it, so a slow/unreachable CRM must never fail the webhook
-// (which would make Supabase retry it and re-send the admin email).
-async function notifyCrm(record: {
-  email: string;
-  first_name?: string | null;
-  last_name?: string | null;
-  lead_source?: string | null;
-}) {
-  if (!process.env.CRM_LEAD_INTAKE_API_KEY) {
-    console.warn("[notify-new-user] CRM_LEAD_INTAKE_API_KEY not set, skipping CRM lead intake");
-    return;
-  }
-  try {
-    const res = await fetch("https://crm.boldlygobeyond.com/api/leads/intake", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.CRM_LEAD_INTAKE_API_KEY,
-      },
-      body: JSON.stringify({
-        firstName: record.first_name ?? "",
-        lastName: record.last_name ?? "",
-        email: record.email,
-        ...(record.lead_source ? { sourceParam: record.lead_source } : {}),
-      }),
-    });
-    if (!res.ok) {
-      console.error("[notify-new-user] CRM lead intake failed:", res.status, await res.text());
-    }
-  } catch (error) {
-    console.error("[notify-new-user] CRM lead intake error:", error);
-  }
-}
+import { notifyCrmLead } from "@/lib/nss/crm";
 
 // Hit by a Supabase Database Webhook on INSERT into public.user_profiles —
 // i.e. exactly once per person, the moment they first sign in. Guarded by a
@@ -72,7 +38,12 @@ export async function POST(request: Request) {
         text: lines.join("\n"),
       }),
     }),
-    notifyCrm(record),
+    notifyCrmLead({
+      firstName: record.first_name ?? "",
+      lastName: record.last_name ?? "",
+      email: record.email,
+      sourceParam: record.lead_source,
+    }),
   ]);
 
   if (emailResult.status === "fulfilled" && !emailResult.value.ok) {
