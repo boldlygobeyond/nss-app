@@ -10,6 +10,17 @@ const nextConfig: NextConfig = {
     "/api/nss/generate-pdf": ["./node_modules/@sparticuz/chromium/bin/**/*"],
     "/api/nss/generate-reports": ["./node_modules/@sparticuz/chromium/bin/**/*"],
   },
+  // Vanity referral links — friendlier than a raw ?source= query string for
+  // partners to share, but resolve to the same landing-page source tracking.
+  async redirects() {
+    return [
+      {
+        source: "/hibo",
+        destination: "/?source=hibo",
+        permanent: false,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
