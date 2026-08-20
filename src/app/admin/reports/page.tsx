@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { FileText, Loader2, ShieldAlert, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { getMyProfile } from "@/lib/nss/userProfiles";
+import { getMyProfile, listAllProfiles, type UserProfile } from "@/lib/nss/userProfiles";
 import { listAllSubmissions, type NssSubmission } from "@/lib/nss/api";
+import { buildFullName } from "@/lib/nss/reportFilename";
 import GlobalHeader from "@/components/GlobalHeader";
 
 function formatDate(ts: string) {
@@ -16,6 +17,7 @@ export default function AllUserReportsPage() {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const [submissions, setSubmissions] = useState<NssSubmission[]>([]);
+  const [profiles, setProfiles] = useState<Record<string, UserProfile>>({});
 
   useEffect(() => {
     const load = async () => {
@@ -32,8 +34,9 @@ export default function AllUserReportsPage() {
       }
 
       setAuthorized(true);
-      const rows = await listAllSubmissions(supabase);
+      const [rows, allProfiles] = await Promise.all([listAllSubmissions(supabase), listAllProfiles(supabase)]);
       setSubmissions(rows);
+      setProfiles(Object.fromEntries(allProfiles.map((p) => [p.id, p])));
       setLoading(false);
     };
     load();
@@ -68,13 +71,16 @@ export default function AllUserReportsPage() {
           </div>
         ) : (
           <div className="space-y-8">
-            {Object.entries(groups).map(([email, records]) => (
+            {Object.entries(groups).map(([email, records]) => {
+              const profile = profiles[records[0].user_id];
+              const fullName = buildFullName(profile?.first_name, profile?.last_name, records[0].respondent_name);
+              return (
               <div key={email}>
                 <div className="flex items-center gap-2 mb-3">
                   <div className="w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center">
                     <Users className="w-3.5 h-3.5 text-accent" />
                   </div>
-                  <span className="font-semibold text-foreground text-sm">{records[0].respondent_name}</span>
+                  <span className="font-semibold text-foreground text-sm">{fullName}</span>
                   <span className="text-xs text-muted-foreground">{email}</span>
                 </div>
                 <div className="space-y-2 ml-9">
@@ -98,7 +104,8 @@ export default function AllUserReportsPage() {
                   ))}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
