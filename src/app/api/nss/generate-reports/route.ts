@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { buildReportPrompt } from "@/lib/nss/reportPrompts";
 import { archiveReportToDrive } from "@/lib/nss/googleDrive";
 import { notifyCrmLead } from "@/lib/nss/crm";
+import { sendAdminEmail } from "@/lib/nss/adminEmail";
 import { renderReportPdf } from "@/lib/nss/pdfRender";
 import { cacheReportPdf } from "@/lib/nss/pdfStorage";
 import { computePairwiseMatchups, type TopNeed } from "@/lib/nss/surveyEngine";
@@ -154,12 +155,25 @@ export async function POST(request: Request) {
           .select("first_name, last_name")
           .eq("id", submission.user_id)
           .maybeSingle();
-        await notifyCrmLead({
-          firstName: profile?.first_name || firstName,
-          lastName: profile?.last_name || "",
-          email: submission.user_email as string,
-          reportUrl: archived.pdfUrl,
-        });
+        const fullName = [profile?.first_name || firstName, profile?.last_name].filter(Boolean).join(" ");
+
+        await Promise.allSettled([
+          notifyCrmLead({
+            firstName: profile?.first_name || firstName,
+            lastName: profile?.last_name || "",
+            email: submission.user_email as string,
+            reportUrl: archived.pdfUrl,
+          }),
+          sendAdminEmail(
+            "Diagnostics report completed",
+            [
+              `${fullName} just completed their Needs Signal Survey.`,
+              "",
+              `Email: ${submission.user_email}`,
+              `Report: ${archived.pdfUrl}`,
+            ].join("\n"),
+          ),
+        ]);
       } catch (driveError) {
         // Best-effort — Drive archival is a backup copy, not required for the
         // in-app report to work, so don't fail the request over it.

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { notifyCrmLead } from "@/lib/nss/crm";
+import { sendAdminEmail } from "@/lib/nss/adminEmail";
 
 // Hit by a Supabase Database Webhook on INSERT into public.user_profiles —
 // i.e. exactly once per person, the moment they first sign in. Guarded by a
@@ -26,20 +27,8 @@ export async function POST(request: Request) {
     record.lead_source ? `Lead source: ${record.lead_source}` : null,
   ].filter(Boolean);
 
-  const [emailResult] = await Promise.allSettled([
-    fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: "Boldly Go Beyond Diagnostics <first.contact@boldlygobeyond.com>",
-        to: "nova.app@boldlygobeyond.com",
-        subject: "New Diagnostics sign-up",
-        text: lines.join("\n"),
-      }),
-    }),
+  await Promise.allSettled([
+    sendAdminEmail("New Diagnostics sign-up", lines.join("\n")),
     notifyCrmLead({
       firstName: record.first_name ?? "",
       lastName: record.last_name ?? "",
@@ -47,12 +36,6 @@ export async function POST(request: Request) {
       sourceParam: record.lead_source,
     }),
   ]);
-
-  if (emailResult.status === "fulfilled" && !emailResult.value.ok) {
-    console.error("[notify-new-user] Resend send failed:", await emailResult.value.text());
-  } else if (emailResult.status === "rejected") {
-    console.error("[notify-new-user] Resend send error:", emailResult.reason);
-  }
 
   return NextResponse.json({ ok: true });
 }
