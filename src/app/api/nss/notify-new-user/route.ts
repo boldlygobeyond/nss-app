@@ -16,11 +16,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "missing record" }, { status: 400 });
   }
 
+  const fullName = [record.first_name, record.last_name].filter(Boolean).join(" ");
+
   const lines = [
     "A new user just signed in for the first time.",
     "",
     `Email: ${record.email}`,
-    record.first_name ? `First name: ${record.first_name}` : null,
+    fullName ? `Name: ${fullName}` : null,
     record.lead_source ? `Lead source: ${record.lead_source}` : null,
   ].filter(Boolean);
 
