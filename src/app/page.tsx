@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Loader2, FileText, Users, Files, Settings, RefreshCw, type LucideIcon } from "lucide-react";
+import { sendGAEvent } from "@next/third-parties/google";
 import { createClient } from "@/lib/supabase/client";
 import { listSubmissionsForUser } from "@/lib/nss/api";
 import { isManager } from "@/lib/nss/userProfiles";
@@ -42,7 +43,12 @@ function LandingPage() {
         </div>
       )}
       <div className="h-20 flex items-center justify-center">
-        <a href="https://boldlygobeyond.com" target="_blank" rel="noopener noreferrer">
+        <a
+          href="https://boldlygobeyond.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => sendGAEvent("event", "outbound_click", { link_location: "landing_logo" })}
+        >
           <BgbLogo height={26} />
         </a>
       </div>

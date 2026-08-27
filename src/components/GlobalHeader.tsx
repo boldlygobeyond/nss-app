@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Home, Sun, Moon, LogOut } from "lucide-react";
+import { sendGAEvent } from "@next/third-parties/google";
 import BgbLogo from "./BgbLogo";
 import BgbStar from "./BgbStar";
 import { useDarkMode } from "@/lib/hooks/useDarkMode";
@@ -73,6 +74,7 @@ export default function GlobalHeader() {
             href="https://boldlygobeyond.com"
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => sendGAEvent("event", "outbound_click", { link_location: "header" })}
             className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
             aria-label="Boldly Go Beyond website"
           >
