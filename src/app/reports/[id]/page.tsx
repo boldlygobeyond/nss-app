@@ -116,9 +116,29 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  const showContent = !!submission && !generating && !error && (isOwner || !!submission.report_data);
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <GlobalHeader />
+
+      {showContent && (
+        <div className="sticky top-14 z-40 bg-primary text-primary-foreground shadow-md">
+          <div className="max-w-3xl mx-auto px-6 py-2.5 flex items-center justify-center">
+            <p className="text-center text-sm font-medium">
+              Your report is ready! Review your insights below or{" "}
+              <button
+                onClick={handleDownloadPdf}
+                disabled={downloadingPdf}
+                className="underline underline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                download your PDF
+              </button>
+              .
+            </p>
+          </div>
+        </div>
+      )}
 
       {!submission ? null : generating ? (
         <div className="flex-1 flex flex-col items-center justify-center px-4 text-center">

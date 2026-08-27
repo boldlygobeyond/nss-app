@@ -1,16 +1,18 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
-import { getSubmission } from "@/lib/nss/api";
+import { getSubmission, type NssSubmission } from "@/lib/nss/api";
 import { CALENDAR_URL } from "@/lib/nss/links";
 import GlobalHeader from "@/components/GlobalHeader";
 import MissionControlPitch from "@/components/reports/MissionControlPitch";
 
 export default function SurveyReportGeneratingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const [submission, setSubmission] = useState<NssSubmission | null>(null);
   const [isReportReady, setIsReportReady] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -18,10 +20,11 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
 
     const run = async () => {
       const supabase = createClient();
-      const submission = await getSubmission(supabase, id);
+      const row = await getSubmission(supabase, id);
       if (cancelled) return;
+      setSubmission(row);
 
-      if (submission?.report_data) {
+      if (row?.report_data) {
         setIsReportReady(true);
         return;
       }
@@ -49,6 +52,32 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
     };
   }, [id]);
 
+  const handleDownloadPdf = useCallback(async () => {
+    setDownloadingPdf(true);
+    try {
+      const res = await fetch(`/api/nss/generate-pdf?id=${id}`);
+      if (!res.ok) throw new Error("PDF generation failed");
+
+      const disposition = res.headers.get("content-disposition") ?? "";
+      const match = disposition.match(/filename\*=UTF-8''([^;]+)/) ?? disposition.match(/filename="([^"]+)"/);
+      const fileName = match ? decodeURIComponent(match[1]) : `${submission?.respondent_name ?? "NSS"}_Report.pdf`;
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "PDF generation failed");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }, [id, submission]);
+
   const handleViewReport = () => {
     window.open(`/reports/${id}`, "_blank", "noopener,noreferrer");
   };
@@ -62,11 +91,25 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
       <GlobalHeader />
 
       <div className="sticky top-14 z-40 bg-primary text-primary-foreground shadow-md">
-        <p className="max-w-3xl mx-auto px-6 py-3 text-center text-sm font-medium">
-          {isReportReady
-            ? "Your report is ready! Scroll to the bottom of the page to access your results."
-            : "Your personal needs report is generating..."}
-        </p>
+        <div className="max-w-3xl mx-auto px-6 py-3 flex items-center justify-center">
+          <p className="text-center text-sm font-medium">
+            {isReportReady ? (
+              <>
+                Your report is ready! Review your insights below or{" "}
+                <button
+                  onClick={handleDownloadPdf}
+                  disabled={downloadingPdf}
+                  className="underline underline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  download your PDF
+                </button>
+                .
+              </>
+            ) : (
+              "Your personal needs report is generating..."
+            )}
+          </p>
+        </div>
         <div className="h-1 bg-primary-foreground/20 overflow-hidden">
           <div
             className={`h-full bg-primary-foreground transition-all duration-700 ${
