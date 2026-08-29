@@ -92,7 +92,7 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
                   </button>
                   <button
                     onClick={handleScheduleCall}
-                    className="h-12 px-8 text-base rounded-lg border border-border/50 hover:bg-secondary text-foreground transition-colors"
+                    className="h-12 px-8 text-base rounded-lg border-2 border-primary text-primary hover:bg-primary/10 transition-colors"
                   >
                     Get Your Team&apos;s Customized Flight Plan!
                   </button>

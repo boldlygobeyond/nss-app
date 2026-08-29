@@ -185,13 +185,13 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
             <button
               onClick={handleDownloadPdf}
               disabled={downloadingPdf}
-              className="h-12 px-8 text-base rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed text-primary-foreground shadow-md transition-colors"
+              className="h-12 px-8 text-base rounded-lg border-2 border-primary text-primary hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {downloadingPdf ? "Preparing..." : "Download PDF"}
             </button>
             <button
               onClick={handleScheduleCall}
-              className="h-12 px-8 text-base rounded-lg border border-border/50 hover:bg-secondary text-foreground transition-colors"
+              className="h-12 px-8 text-base rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-md transition-colors"
             >
               Get Your Team&apos;s Customized Flight Plan!
             </button>
