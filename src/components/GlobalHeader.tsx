@@ -29,7 +29,7 @@ export default function GlobalHeader() {
       if (!user?.email) return;
       const [profile, managerCheck] = await Promise.all([
         getMyProfile(supabase, user.id),
-        isManager(supabase, user.email),
+        isManager(supabase, user.email).catch(() => false),
       ]);
       setIsElevated(profile?.role === "admin" || managerCheck);
     };

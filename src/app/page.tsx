@@ -100,16 +100,21 @@ function LandingPage() {
 }
 
 function AdminHomescreen({
-  firstName,
   isAdmin,
   isManagerRole,
+  myReportId,
 }: {
-  firstName: string | null;
   isAdmin: boolean;
   isManagerRole: boolean;
+  myReportId: string | null;
 }) {
   const cards: { href: string; label: string; description: string; icon: LucideIcon }[] = [
-    { href: "/reports", label: "My Reports", description: "View your own Needs Signal Report.", icon: FileText },
+    {
+      href: myReportId ? `/reports/${myReportId}` : "/reports",
+      label: "My Report",
+      description: "View your Needs Signal Report.",
+      icon: FileText,
+    },
     isManagerRole && {
       href: "/manager",
       label: "Manager Dashboard",
@@ -128,7 +133,7 @@ function AdminHomescreen({
       description: "Manage roles and the reporting hierarchy.",
       icon: Settings,
     },
-    {
+    isAdmin && {
       href: "/survey",
       label: "Retake the Survey",
       description: "Start a new attempt, useful for testing changes.",
@@ -139,16 +144,9 @@ function AdminHomescreen({
   return (
     <div className="max-w-2xl mx-auto px-6 py-12 w-full">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-        <h1 className="font-heading text-3xl md:text-4xl font-bold text-foreground mb-2">
-          Welcome{firstName ? `, ${firstName}` : ""}.
-        </h1>
-        <p className="text-muted-foreground text-lg mb-3">
-          See the signals. Decode the system. Unlock what&apos;s possible.
-        </p>
-        <span className="inline-block text-xs font-semibold tracking-wide uppercase text-primary bg-primary/10 px-3 py-1 rounded-full mb-10">
-          Admin Portal
-        </span>
-
+        {isManagerRole && (
+          <h1 className="font-heading text-2xl font-bold text-foreground mb-6">Needs Signal Survey</h1>
+        )}
         <div className="grid sm:grid-cols-2 gap-4">
           {cards.map((card) => (
             <Link
@@ -178,6 +176,7 @@ function AuthenticatedHome() {
   const [hasCompleted, setHasCompleted] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isManagerRole, setIsManagerRole] = useState(false);
+  const [myReportId, setMyReportId] = useState<string | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -192,7 +191,10 @@ function AuthenticatedHome() {
         const [{ data: profile }, completedSubmissions, managerCheck] = await Promise.all([
           supabase.from("user_profiles").select("first_name, nss_enabled, role").eq("id", user.id).maybeSingle(),
           listSubmissionsForUser(supabase, user.id),
-          isManager(supabase, user.email),
+          // Best-effort — a hiccup here (e.g. the is_manager RPC briefly
+          // unavailable) shouldn't take down the whole homepage load, just
+          // fall back to "not a manager" for this visit.
+          isManager(supabase, user.email).catch(() => false),
         ]);
 
         const enabled = profile?.nss_enabled !== false;
@@ -224,6 +226,7 @@ function AuthenticatedHome() {
         setHasCompleted(completed);
         setIsAdmin(admin);
         setIsManagerRole(managerCheck);
+        setMyReportId(completedSubmissions[0]?.id ?? null);
       } finally {
         if (!redirected) setLoading(false);
       }
@@ -240,7 +243,7 @@ function AuthenticatedHome() {
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
       ) : hasCompleted ? (
-        <AdminHomescreen firstName={firstName} isAdmin={isAdmin} isManagerRole={isManagerRole} />
+        <AdminHomescreen isAdmin={isAdmin} isManagerRole={isManagerRole} myReportId={myReportId} />
       ) : (
         <div className="max-w-2xl mx-auto px-6 py-12 w-full">
           <h1 className="font-heading text-3xl md:text-4xl font-bold text-foreground mb-2">

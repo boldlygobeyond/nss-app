@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { FileText, Loader2, Users } from "lucide-react";
+import { Loader2, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { listTeamSubmissions, type NssSubmission } from "@/lib/nss/api";
+import { listTeamProfiles, type TeamProfile } from "@/lib/nss/userProfiles";
+import { buildFullName } from "@/lib/nss/reportFilename";
 import GlobalHeader from "@/components/GlobalHeader";
 
 function formatDate(ts: string) {
@@ -14,6 +16,7 @@ function formatDate(ts: string) {
 export default function ManagerDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [submissions, setSubmissions] = useState<NssSubmission[]>([]);
+  const [profiles, setProfiles] = useState<Record<string, TeamProfile>>({});
 
   useEffect(() => {
     const load = async () => {
@@ -22,8 +25,12 @@ export default function ManagerDashboardPage() {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user?.email) return;
-      const rows = await listTeamSubmissions(supabase, user.email);
+      const [rows, teamProfiles] = await Promise.all([
+        listTeamSubmissions(supabase, user.email),
+        listTeamProfiles(supabase, user.email),
+      ]);
       setSubmissions(rows);
+      setProfiles(Object.fromEntries(teamProfiles.map((p) => [p.email, p])));
       setLoading(false);
     };
     load();
@@ -52,38 +59,36 @@ export default function ManagerDashboardPage() {
             <p className="text-muted-foreground text-sm">No reports from your team yet.</p>
           </div>
         ) : (
-          <div className="space-y-8">
-            {Object.entries(groups).map(([email, records]) => (
-              <div key={email}>
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center">
-                    <Users className="w-3.5 h-3.5 text-accent" />
-                  </div>
-                  <span className="font-semibold text-foreground text-sm">{records[0].respondent_name}</span>
-                  <span className="text-xs text-muted-foreground">{email}</span>
-                </div>
-                <div className="space-y-2 ml-9">
-                  {records.map((s) => (
-                    <div key={s.id} className="bg-card border border-border/50 rounded-xl p-4 flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                          <FileText className="w-4 h-4 text-primary" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-foreground">Needs Signal Survey Report</p>
-                          <p className="text-xs text-muted-foreground">{formatDate(s.updated_at)}</p>
-                        </div>
-                      </div>
-                      <Link href={`/reports/${s.id}`}>
-                        <button className="text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors">
-                          View
-                        </button>
-                      </Link>
+          <div className="space-y-2">
+            {Object.entries(groups).map(([email, records]) => {
+              const report = records[0];
+              const profile = profiles[email];
+              const fullName = buildFullName(profile?.first_name, profile?.last_name, report.respondent_name);
+              return (
+                <div
+                  key={email}
+                  className="bg-card border border-border/50 rounded-xl p-4 flex items-center justify-between gap-4"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center shrink-0">
+                      <Users className="w-3.5 h-3.5 text-accent" />
                     </div>
-                  ))}
+                    <div className="min-w-0">
+                      <span className="font-semibold text-foreground text-sm">{fullName}</span>{" "}
+                      <span className="text-xs text-muted-foreground">{email}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 shrink-0">
+                    <p className="text-xs text-muted-foreground">{formatDate(report.updated_at)}</p>
+                    <Link href={`/reports/${report.id}`}>
+                      <button className="text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors">
+                        View
+                      </button>
+                    </Link>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
