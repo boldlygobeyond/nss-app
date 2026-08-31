@@ -18,6 +18,7 @@ export default function ReportClosingPage({ cta }: { cta: ReactNode }) {
         By mapping your entire team&apos;s needs you get a deep understanding of how everyone&apos;s needs are
         interconnected so you can take shortcuts that unlock your team&apos;s true potential.
       </p>
+      <p className="font-heading font-semibold text-foreground text-sm mb-2">Get ready to unlock:</p>
       <ul className="list-disc pl-5 space-y-2 text-foreground text-sm leading-relaxed">
         {BENTO_CARDS.map((card) => (
           <li key={card.title}>

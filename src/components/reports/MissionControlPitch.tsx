@@ -11,18 +11,21 @@ export default function MissionControlPitch({ headline, cta }: { headline: strin
       <h1 className="font-heading text-3xl md:text-4xl font-bold text-foreground mb-4 text-center leading-tight">
         {headline}
       </h1>
-      <p className="text-muted-foreground text-lg mb-16 text-center leading-relaxed max-w-2xl mx-auto">
+      <p className="text-muted-foreground text-lg mb-6 text-center leading-relaxed max-w-2xl mx-auto">
         By mapping your entire team&apos;s needs you get a deep understanding of how everyone&apos;s needs are
         interconnected so you can take shortcuts that unlock your team&apos;s true potential.
       </p>
 
-      <div className="grid md:grid-cols-3 gap-4 mb-20">
-        {BENTO_CARDS.map((card) => (
-          <div key={card.title} className="bg-card border border-border/50 rounded-2xl p-6">
-            <h3 className="font-heading text-lg font-semibold text-foreground mb-2">{card.title}</h3>
-            <p className="text-muted-foreground text-sm leading-relaxed">{card.body}</p>
-          </div>
-        ))}
+      <div className="bg-card border border-border/50 rounded-2xl p-6 md:p-8 mb-20 max-w-2xl mx-auto">
+        <p className="font-heading font-semibold text-foreground mb-4">Get ready to unlock:</p>
+        <ul className="list-disc pl-5 space-y-3 text-foreground text-sm leading-relaxed">
+          {BENTO_CARDS.map((card) => (
+            <li key={card.title}>
+              <strong className="font-semibold">{card.title}:</strong>{" "}
+              <span className="text-muted-foreground">{card.body}</span>
+            </li>
+          ))}
+        </ul>
       </div>
 
       <div className="mb-20">

@@ -95,11 +95,18 @@ export default function AllUserReportsPage() {
                           <p className="text-xs text-muted-foreground">{formatDate(s.updated_at)}</p>
                         </div>
                       </div>
-                      <Link href={`/reports/${s.id}`}>
-                        <button className="text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors">
-                          View
-                        </button>
-                      </Link>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Link href={`/survey/report/${s.id}`} target="_blank" rel="noopener noreferrer">
+                          <button className="text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors">
+                            Preview Interstitial
+                          </button>
+                        </Link>
+                        <Link href={`/reports/${s.id}`}>
+                          <button className="text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors">
+                            View
+                          </button>
+                        </Link>
+                      </div>
                     </div>
                   ))}
                 </div>
