@@ -47,7 +47,7 @@ function LandingPage() {
           href="https://boldlygobeyond.com"
           target="_blank"
           rel="noopener noreferrer"
-          onClick={() => sendGAEvent("event", "outbound_click", { link_location: "landing_logo" })}
+          onClick={() => sendGAEvent("event", "outbound_click", { link_location: "NSS_landing_logo" })}
         >
           <BgbLogo height={26} />
         </a>

@@ -74,7 +74,7 @@ export default function GlobalHeader() {
             href="https://boldlygobeyond.com"
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => sendGAEvent("event", "outbound_click", { link_location: "header" })}
+            onClick={() => sendGAEvent("event", "outbound_click", { link_location: "NSS_header" })}
             className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
             aria-label="Boldly Go Beyond website"
           >
