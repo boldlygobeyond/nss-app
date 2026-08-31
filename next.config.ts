@@ -19,6 +19,11 @@ const nextConfig: NextConfig = {
         destination: "/?source=hibo",
         permanent: false,
       },
+      {
+        source: "/ByteDance",
+        destination: "/?source=jonathan_leder",
+        permanent: false,
+      },
     ];
   },
 };
