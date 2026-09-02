@@ -24,6 +24,11 @@ const nextConfig: NextConfig = {
         destination: "/?source=jonathan_leder",
         permanent: false,
       },
+      {
+        source: "/wisLGBT",
+        destination: "/?source=wisLGBT",
+        permanent: false,
+      },
     ];
   },
 };
