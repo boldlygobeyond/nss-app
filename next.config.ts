@@ -29,6 +29,11 @@ const nextConfig: NextConfig = {
         destination: "/?source=wisLGBT",
         permanent: false,
       },
+      {
+        source: "/atlas",
+        destination: "/?source=atlas",
+        permanent: false,
+      },
     ];
   },
 };
