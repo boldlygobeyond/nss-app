@@ -8,10 +8,31 @@ import { CALENDAR_URL } from "@/lib/nss/links";
 import GlobalHeader from "@/components/GlobalHeader";
 import MissionControlPitch from "@/components/reports/MissionControlPitch";
 
+// Cycled while the report generates so the wait reads as active stages
+// rather than one long, unexplained pause — the Claude call alone can
+// take a while, and there's no real sub-progress to report honestly, so
+// this communicates "still working" without claiming a fake percentage.
+const STATUS_MESSAGES = [
+  "Your personal needs report is generating...",
+  "Scoring your responses...",
+  "Finding your strongest patterns...",
+  "Writing your personal insights...",
+  "Almost there...",
+];
+
 export default function SurveyReportGeneratingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [isReportReady, setIsReportReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusIndex, setStatusIndex] = useState(0);
+
+  useEffect(() => {
+    if (isReportReady) return;
+    const interval = setInterval(() => {
+      setStatusIndex((i) => Math.min(i + 1, STATUS_MESSAGES.length - 1));
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [isReportReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,14 +90,18 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
         <p className="max-w-3xl mx-auto px-6 py-3 text-center text-sm font-medium">
           {isReportReady
             ? "Your report is ready! Scroll to the bottom of the page to access your results."
-            : "Your personal needs report is generating..."}
+            : STATUS_MESSAGES[statusIndex]}
         </p>
-        <div className="h-1 bg-primary-foreground/20 overflow-hidden">
-          <div
-            className={`h-full bg-primary-foreground transition-all duration-700 ${
-              isReportReady ? "w-full" : "w-1/3 animate-pulse"
-            }`}
-          />
+        <div className="h-1 bg-primary-foreground/20 overflow-hidden relative">
+          {isReportReady ? (
+            <div className="h-full w-full bg-primary-foreground transition-all duration-700" />
+          ) : (
+            <motion.div
+              className="h-full w-1/3 bg-primary-foreground rounded-full"
+              animate={{ x: ["-100%", "400%"] }}
+              transition={{ repeat: Infinity, duration: 1.4, ease: "easeInOut" }}
+            />
+          )}
         </div>
       </div>
 

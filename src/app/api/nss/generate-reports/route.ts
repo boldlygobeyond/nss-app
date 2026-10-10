@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -146,59 +146,72 @@ export async function POST(request: Request) {
     if (updateError) throw updateError;
 
     if (submission.user_email) {
-      try {
-        const cookieStore = await cookies();
-        const coverUrl = `${origin}/reports/${submissionId}/print/cover`;
-        const bodyUrl = `${origin}/reports/${submissionId}/print?pdfMode=1`;
-        const pdfBuffer = await renderReportPdf({ coverUrl, bodyUrl, cookies: cookieStore.getAll() });
+      // PDF render (headless Chrome) + Drive upload + CRM/admin notify were
+      // previously all awaited before responding — the respondent's browser
+      // sat blocked on the slowest part of the whole request (a full
+      // Puppeteer launch and two page loads) despite having nothing to do
+      // with whether their report is ready to show. after() runs this tail
+      // once the response below has already been sent, so the report
+      // appears as soon as the Claude call + DB write are done; the PDF/
+      // Drive/notify work still completes within the same maxDuration
+      // budget, just without the respondent waiting on it.
+      const cookieStore = await cookies();
+      const cookieList = cookieStore.getAll();
 
-        await cacheReportPdf(createAdminClient(), submissionId, pdfBuffer).catch((cacheError) =>
-          console.warn("[generate-reports] PDF cache failed:", cacheError),
-        );
+      after(async () => {
+        try {
+          const coverUrl = `${origin}/reports/${submissionId}/print/cover`;
+          const bodyUrl = `${origin}/reports/${submissionId}/print?pdfMode=1`;
+          const pdfBuffer = await renderReportPdf({ coverUrl, bodyUrl, cookies: cookieList });
 
-        const archived = await archiveReportToDrive({
-          userEmail: submission.user_email as string,
-          pdfBuffer,
-        });
-        await supabase
-          .from("nss_submissions")
-          .update({ pdf_url: archived.pdfUrl, pdf_drive_id: archived.pdfDriveId })
-          .eq("id", submissionId);
+          await cacheReportPdf(createAdminClient(), submissionId, pdfBuffer).catch((cacheError) =>
+            console.warn("[generate-reports] PDF cache failed:", cacheError),
+          );
 
-        const { data: profile } = await supabase
-          .from("user_profiles")
-          .select("first_name, last_name")
-          .eq("id", submission.user_id)
-          .maybeSingle();
-        const fullName = [profile?.first_name || firstName, profile?.last_name].filter(Boolean).join(" ");
+          const archived = await archiveReportToDrive({
+            userEmail: submission.user_email as string,
+            pdfBuffer,
+          });
+          await supabase
+            .from("nss_submissions")
+            .update({ pdf_url: archived.pdfUrl, pdf_drive_id: archived.pdfDriveId })
+            .eq("id", submissionId);
 
-        await Promise.allSettled([
-          // notifyCrmLead already skips internal/test-account emails itself.
-          notifyCrmLead({
-            firstName: profile?.first_name || firstName,
-            lastName: profile?.last_name || "",
-            email: submission.user_email as string,
-            reportUrl: archived.pdfUrl,
-          }),
-          ...(isNonLeadEmail(submission.user_email as string)
-            ? []
-            : [
-                sendAdminEmail(
-                  "Diagnostics report completed",
-                  [
-                    `${fullName} just completed their Needs Signal Survey.`,
-                    "",
-                    `Email: ${submission.user_email}`,
-                    `Report: ${archived.pdfUrl}`,
-                  ].join("\n"),
-                ),
-              ]),
-        ]);
-      } catch (driveError) {
-        // Best-effort — Drive archival is a backup copy, not required for the
-        // in-app report to work, so don't fail the request over it.
-        console.warn("[generate-reports] Drive archive failed:", driveError);
-      }
+          const { data: profile } = await supabase
+            .from("user_profiles")
+            .select("first_name, last_name")
+            .eq("id", submission.user_id)
+            .maybeSingle();
+          const fullName = [profile?.first_name || firstName, profile?.last_name].filter(Boolean).join(" ");
+
+          await Promise.allSettled([
+            // notifyCrmLead already skips internal/test-account emails itself.
+            notifyCrmLead({
+              firstName: profile?.first_name || firstName,
+              lastName: profile?.last_name || "",
+              email: submission.user_email as string,
+              reportUrl: archived.pdfUrl,
+            }),
+            ...(isNonLeadEmail(submission.user_email as string)
+              ? []
+              : [
+                  sendAdminEmail(
+                    "Diagnostics report completed",
+                    [
+                      `${fullName} just completed their Needs Signal Survey.`,
+                      "",
+                      `Email: ${submission.user_email}`,
+                      `Report: ${archived.pdfUrl}`,
+                    ].join("\n"),
+                  ),
+                ]),
+          ]);
+        } catch (driveError) {
+          // Best-effort — Drive archival is a backup copy, not required for the
+          // in-app report to work, so don't fail the request over it.
+          console.warn("[generate-reports] Drive archive failed:", driveError);
+        }
+      });
     }
 
     return NextResponse.json({ report_data: reportData });
