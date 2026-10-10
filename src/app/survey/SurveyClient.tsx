@@ -15,19 +15,42 @@ import {
   type Tally,
 } from "@/lib/nss/surveyEngine";
 import {
+  selectNextBtQuestion,
+  seedDeliveryStateFromHistory,
+  applyAnswerOutcome,
+  initDeliveryState,
+  isTieBreakOnlyPair,
+  btShouldStop,
+  type DeliveryState,
+} from "@/lib/nss/adaptiveDelivery";
+import { rankByBradleyTerry, btFavorability, type BtResponse } from "@/lib/nss/bradleyTerry";
+import { CLUSTERS, type ClusterKey } from "@/lib/nss/clusters";
+import {
   createSubmission,
   updateSubmissionProgress,
   finishSubmission,
   insertResponse,
   findInProgressSubmission,
+  listResponsesForSubmission,
 } from "@/lib/nss/api";
 import NovaGreeting from "@/components/survey/NovaGreeting";
 import QuestionCard from "@/components/survey/QuestionCard";
 import ProgressIndicator from "@/components/survey/ProgressIndicator";
 
 const STORAGE_KEY = "nss_survey_state";
-const STATE_VERSION = 1;
+const STATE_VERSION = 2;
 const HARD_STOP = 50;
+// Local-only test flag for the Oct 2026 rebalance (new 86-question bank +
+// Bradley-Terry delivery/scoring). Never set in the deployed environment —
+// see questions.ts's matching useNewBank flag.
+const USE_BT_ENGINE = process.env.NEXT_PUBLIC_NSS_ENGINE === "bt";
+
+function serializeDeliveryState(state: DeliveryState) {
+  return { ...state, pendingValidation: [...state.pendingValidation] };
+}
+function deserializeDeliveryState(raw: ReturnType<typeof serializeDeliveryState>): DeliveryState {
+  return { ...raw, pendingValidation: new Set(raw.pendingValidation) };
+}
 
 interface AnsweredDetail {
   question_id: number;
@@ -51,6 +74,8 @@ interface SavedState {
   questionsAnswered: number;
   answeredDetails: AnsweredDetail[];
   isSharpened: boolean;
+  btResponses: BtResponse[];
+  deliveryState: ReturnType<typeof serializeDeliveryState>;
 }
 
 function loadSavedState(): SavedState | null {
@@ -81,6 +106,33 @@ function sequenceFromIds(questions: SurveyQuestion[], ids: number[]): SurveyQues
   return ids.map((id) => map[id]).filter(Boolean);
 }
 
+/**
+ * Picks the next BT-adaptive question. On the very first call after
+ * calibration ends (sequence.length === 21, checked by the caller),
+ * deliveryState hasn't seen any of the 21 calibration answers yet — those
+ * were played straight through from the fixed sequence, not selected by
+ * this module — so it's seeded from that history first.
+ */
+function pullNextQuestionBt(
+  pool: SurveyQuestion[],
+  btResponsesSoFar: BtResponse[],
+  usedIdsSoFar: Set<number>,
+  currentDeliveryState: DeliveryState,
+  answeredSoFar: number,
+  calibrationJustCompleted: boolean,
+  answeredHistoryForSeed: { mapped_clusters: string[]; is_sharpened_question: boolean }[],
+): { question: SurveyQuestion; nextState: DeliveryState } | null {
+  const stateForSelection = calibrationJustCompleted
+    ? seedDeliveryStateFromHistory(
+        answeredHistoryForSeed.map((d) => ({
+          mappedClusters: d.mapped_clusters as [ClusterKey, ClusterKey],
+          isSharpened: d.is_sharpened_question,
+        })),
+      )
+    : currentDeliveryState;
+  return selectNextBtQuestion(pool, btResponsesSoFar, usedIdsSoFar, stateForSelection, answeredSoFar);
+}
+
 type Phase = "loading" | "greeting" | "survey" | "completing";
 
 export default function SurveyClient() {
@@ -106,8 +158,22 @@ export default function SurveyClient() {
   const [questionsAnswered, setQuestionsAnswered] = useState(0);
   const [answeredDetails, setAnsweredDetails] = useState<AnsweredDetail[]>([]);
   const [lastQuestionId, setLastQuestionId] = useState<number | null>(null);
+  const [btResponses, setBtResponses] = useState<BtResponse[]>([]);
+  const [deliveryState, setDeliveryState] = useState<DeliveryState>(initDeliveryState());
 
   const currentQuestion = sequence[questionIndex] || null;
+
+  // QuestionCard's exit animation (AnimatePresence mode="wait", ~350ms)
+  // keeps the outgoing card's buttons mounted and clickable while it fades
+  // out. A click landing in that window fires onAnswer/onSkip again with
+  // the *previous* question's stale closure — confirmed in testing (two
+  // questions each got answered twice, back to back, with identical
+  // selections). Guards both handlers; clears once the next question
+  // actually renders.
+  const processingRef = useRef(false);
+  useEffect(() => {
+    processingRef.current = false;
+  }, [currentQuestion, isSharpened]);
 
   // ── Bootstrap: load questions + auth + resume state ──────────────────────
   useEffect(() => {
@@ -147,6 +213,10 @@ export default function SurveyClient() {
         setQuestionsAnswered(saved.questionsAnswered);
         setAnsweredDetails(saved.answeredDetails);
         setIsSharpened(saved.isSharpened);
+        if (USE_BT_ENGINE) {
+          setBtResponses(saved.btResponses ?? []);
+          if (saved.deliveryState) setDeliveryState(deserializeDeliveryState(saved.deliveryState));
+        }
         setPhase("survey");
         return;
       }
@@ -173,6 +243,16 @@ export default function SurveyClient() {
         setQuestionsAnswered(inProgress.questions_answered);
         setAnsweredDetails([]);
         setIsSharpened(false);
+        if (USE_BT_ENGINE) {
+          // btResponses can be rebuilt exactly from the stored rows, but
+          // is_sharpened/ordering aren't selected there today, so the
+          // validation/staleness bookkeeping in deliveryState can't be —
+          // acceptable here since this path is cross-device resume of an
+          // old submission, not the fresh test run this flag is for.
+          const rows = await listResponsesForSubmission(supabase, inProgress.id);
+          setBtResponses(rows);
+          setDeliveryState(initDeliveryState(inProgress.questions_answered));
+        }
         setPhase("survey");
         return;
       }
@@ -198,8 +278,23 @@ export default function SurveyClient() {
       questionsAnswered,
       answeredDetails,
       isSharpened,
+      btResponses,
+      deliveryState: serializeDeliveryState(deliveryState),
     });
-  }, [phase, submissionId, userName, userPronouns, sequence, questionIndex, tally, questionsAnswered, answeredDetails, isSharpened]);
+  }, [
+    phase,
+    submissionId,
+    userName,
+    userPronouns,
+    sequence,
+    questionIndex,
+    tally,
+    questionsAnswered,
+    answeredDetails,
+    isSharpened,
+    btResponses,
+    deliveryState,
+  ]);
 
   // ── Debounced Supabase sync ────────────────────────────────────────────────
   useEffect(() => {
@@ -217,7 +312,12 @@ export default function SurveyClient() {
 
   // ── Greeting complete ─────────────────────────────────────────────────────
   const handleGreetingComplete = async (name: string, pronouns: string) => {
-    const { calibration } = buildCalibrationSequence(questions);
+    // Belonging-vs-Stability and Belonging-vs-Connections are last-resort
+    // only — excluded from calibration too, same as the adaptive phase.
+    const calibrationPool = USE_BT_ENGINE
+      ? questions.filter((q) => !isTieBreakOnlyPair(q.mappedClusters[0], q.mappedClusters[1]))
+      : questions;
+    const { calibration } = buildCalibrationSequence(calibrationPool);
     setSequence(calibration);
     setUsedIds(new Set(calibration.map((q) => q.id)));
     setUserName(name);
@@ -226,6 +326,10 @@ export default function SurveyClient() {
 
     const freshTally = initTally();
     setTally(freshTally);
+    if (USE_BT_ENGINE) {
+      setBtResponses([]);
+      setDeliveryState(initDeliveryState());
+    }
 
     if (userId) {
       try {
@@ -246,10 +350,31 @@ export default function SurveyClient() {
 
   // ── Finish survey ─────────────────────────────────────────────────────────
   const finishSurvey = useCallback(
-    async (finalTally: Tally, answered: number, seq: SurveyQuestion[]) => {
+    async (finalTally: Tally, answered: number, seq: SurveyQuestion[], finalBtResponses: BtResponse[]) => {
       setPhase("completing");
       const topNeeds = getTopNeeds(finalTally);
       const scores = tallyToScores(finalTally);
+
+      // The chart/top_needs columns previously always showed plain win rate.
+      // Once the narrative is BT-ranked, that's actively misleading whenever
+      // the two disagree (exactly the case BT exists to fix) — a cluster can
+      // look worse by raw win rate than one it's actually stronger than once
+      // strength of schedule is accounted for. wins/losses/total stay as
+      // real observed counts; only the displayed favorability figure (and
+      // the sort order built from it) switches to the BT-consistent one.
+      if (USE_BT_ENGINE) {
+        const ranked = rankByBradleyTerry(finalBtResponses);
+        const favorabilityByCluster = Object.fromEntries(
+          ranked.map((r) => [r.cluster, btFavorability(r.strength)]),
+        ) as Record<ClusterKey, number>;
+        CLUSTERS.forEach((c) => {
+          scores[c].winRate = favorabilityByCluster[c];
+        });
+        topNeeds.forEach((n) => {
+          n.winRate = favorabilityByCluster[n.cluster];
+        });
+        topNeeds.sort((a, b) => b.winRate - a.winRate);
+      }
 
       if (submissionId) {
         try {
@@ -274,7 +399,8 @@ export default function SurveyClient() {
   // ── Answer handler ─────────────────────────────────────────────────────────
   const handleAnswer = useCallback(
     (choice: "A" | "B") => {
-      if (!currentQuestion) return;
+      if (!currentQuestion || processingRef.current) return;
+      processingRef.current = true;
 
       const [clusterA, clusterB] = currentQuestion.mappedClusters;
       const chosenClusters = choice === "A" ? [clusterA] : [clusterB];
@@ -282,6 +408,16 @@ export default function SurveyClient() {
 
       const newTally = recordAnswer(tally, chosenClusters, rejectedClusters);
       setTally(newTally);
+
+      const newBtResponses = USE_BT_ENGINE
+        ? [...btResponses, { chosen_clusters: chosenClusters, rejected_clusters: rejectedClusters }]
+        : btResponses;
+      if (USE_BT_ENGINE) setBtResponses(newBtResponses);
+
+      const outcomeState = USE_BT_ENGINE
+        ? applyAnswerOutcome(deliveryState, currentQuestion.mappedClusters, isSharpened)
+        : deliveryState;
+      if (USE_BT_ENGINE) setDeliveryState(outcomeState);
 
       const newAnswered = questionsAnswered + 1;
       setQuestionsAnswered(newAnswered);
@@ -314,8 +450,11 @@ export default function SurveyClient() {
         }).catch(() => {});
       }
 
-      if (newAnswered >= HARD_STOP) {
-        finishSurvey(newTally, newAnswered, sequence);
+      const stopNow = USE_BT_ENGINE
+        ? btShouldStop(newBtResponses, newAnswered, HARD_STOP)
+        : newAnswered >= HARD_STOP;
+      if (stopNow) {
+        finishSurvey(newTally, newAnswered, sequence, newBtResponses);
         return;
       }
 
@@ -325,9 +464,33 @@ export default function SurveyClient() {
         return;
       }
 
+      if (USE_BT_ENGINE) {
+        const next = pullNextQuestionBt(
+          questions,
+          newBtResponses,
+          usedIds,
+          outcomeState,
+          newAnswered,
+          sequence.length === 21,
+          newDetails,
+        );
+        if (!next) {
+          finishSurvey(newTally, newAnswered, sequence, newBtResponses);
+          return;
+        }
+        const newSeq = [...sequence, next.question];
+        const newUsed = new Set(usedIds);
+        newUsed.add(next.question.id);
+        setSequence(newSeq);
+        setUsedIds(newUsed);
+        setDeliveryState(next.nextState);
+        setQuestionIndex(nextIdx);
+        return;
+      }
+
       const block = selectAdaptiveBlock(questions, newTally, usedIds);
       if (block.length === 0) {
-        finishSurvey(newTally, newAnswered, sequence);
+        finishSurvey(newTally, newAnswered, sequence, newBtResponses);
         return;
       }
       const newSeq = [...sequence, ...block];
@@ -351,6 +514,8 @@ export default function SurveyClient() {
       usedIds,
       questions,
       finishSurvey,
+      btResponses,
+      deliveryState,
     ],
   );
 
@@ -358,15 +523,42 @@ export default function SurveyClient() {
   const handleItDepends = useCallback(() => setIsSharpened(true), []);
 
   const handleSkip = useCallback(() => {
+    if (processingRef.current) return;
+    processingRef.current = true;
     setIsSharpened(false);
     const nextIdx = questionIndex + 1;
     if (nextIdx < sequence.length) {
       setQuestionIndex(nextIdx);
       return;
     }
+
+    if (USE_BT_ENGINE) {
+      const next = pullNextQuestionBt(
+        questions,
+        btResponses,
+        usedIds,
+        deliveryState,
+        questionsAnswered,
+        sequence.length === 21,
+        answeredDetails,
+      );
+      if (!next) {
+        finishSurvey(tally, questionsAnswered, sequence, btResponses);
+        return;
+      }
+      const newSeq = [...sequence, next.question];
+      const newUsed = new Set(usedIds);
+      newUsed.add(next.question.id);
+      setSequence(newSeq);
+      setUsedIds(newUsed);
+      setDeliveryState(next.nextState);
+      setQuestionIndex(nextIdx);
+      return;
+    }
+
     const block = selectAdaptiveBlock(questions, tally, usedIds);
     if (block.length === 0) {
-      finishSurvey(tally, questionsAnswered, sequence);
+      finishSurvey(tally, questionsAnswered, sequence, btResponses);
       return;
     }
     const newSeq = [...sequence, ...block];
@@ -375,7 +567,18 @@ export default function SurveyClient() {
     setSequence(newSeq);
     setUsedIds(newUsed);
     setQuestionIndex(nextIdx);
-  }, [questionIndex, sequence, questions, tally, usedIds, questionsAnswered, finishSurvey]);
+  }, [
+    questionIndex,
+    sequence,
+    questions,
+    tally,
+    usedIds,
+    questionsAnswered,
+    finishSurvey,
+    btResponses,
+    deliveryState,
+    answeredDetails,
+  ]);
 
   const handleBack = useCallback(() => {
     if (isSharpened) {

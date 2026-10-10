@@ -56,7 +56,11 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
         const res = await fetch("/api/nss/generate-reports", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ submissionId: id, force }),
+          body: JSON.stringify({
+            submissionId: id,
+            force,
+            ...(process.env.NEXT_PUBLIC_NSS_ENGINE === "bt" ? { scoringModel: "bradley-terry" } : {}),
+          }),
         });
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || "Report generation failed");

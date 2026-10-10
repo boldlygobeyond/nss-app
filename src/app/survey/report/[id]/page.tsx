@@ -30,7 +30,11 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
         const res = await fetch("/api/nss/generate-reports", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ submissionId: id, force: false }),
+          body: JSON.stringify({
+            submissionId: id,
+            force: false,
+            ...(process.env.NEXT_PUBLIC_NSS_ENGINE === "bt" ? { scoringModel: "bradley-terry" } : {}),
+          }),
         });
         if (cancelled) return;
         if (!res.ok) {

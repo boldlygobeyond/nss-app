@@ -3,13 +3,14 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { buildReportPrompt } from "@/lib/nss/reportPrompts";
+import { buildReportPrompt, buildReportPromptV2 } from "@/lib/nss/reportPrompts";
 import { archiveReportToDrive } from "@/lib/nss/googleDrive";
 import { notifyCrmLead } from "@/lib/nss/crm";
 import { sendAdminEmail } from "@/lib/nss/adminEmail";
 import { renderReportPdf } from "@/lib/nss/pdfRender";
 import { cacheReportPdf } from "@/lib/nss/pdfStorage";
 import { computePairwiseMatchups, type TopNeed } from "@/lib/nss/surveyEngine";
+import { rankByBradleyTerry } from "@/lib/nss/bradleyTerry";
 import type { ReportData } from "@/lib/nss/reportTypes";
 
 // Hobby-plan ceiling without Fluid Compute is 60s — this route does a
@@ -35,7 +36,12 @@ function extractJson(text: string): unknown {
 
 export async function POST(request: Request) {
   const { origin } = new URL(request.url);
-  const { submissionId, force } = await request.json();
+  // scoringModel is opt-in and defaults to the shipped win-rate model, so
+  // existing behavior is untouched unless a caller explicitly asks for the
+  // Bradley-Terry path — this is here for local pre-launch comparison, not
+  // yet the default for real respondents.
+  const { submissionId, force, scoringModel } = await request.json();
+  const useBradleyTerry = scoringModel === "bradley-terry";
   if (!submissionId) {
     return NextResponse.json({ error: "submissionId required" }, { status: 400 });
   }
@@ -73,19 +79,28 @@ export async function POST(request: Request) {
   try {
     const { data: responses, error: responsesError } = await supabase
       .from("nss_responses")
-      .select("chosen_clusters, rejected_clusters")
+      .select("chosen_clusters, rejected_clusters, is_sharpened")
       .eq("submission_id", submissionId);
     if (responsesError) throw responsesError;
 
     const matchups = computePairwiseMatchups(responses ?? []);
 
-    const prompt = buildReportPrompt({
-      firstName,
-      respondentName: submission.respondent_name as string,
-      pronouns: (submission.pronouns as string) || "they/them",
-      topNeeds,
-      matchups,
-    });
+    const prompt = useBradleyTerry
+      ? buildReportPromptV2({
+          firstName,
+          respondentName: submission.respondent_name as string,
+          pronouns: (submission.pronouns as string) || "they/them",
+          btRanked: rankByBradleyTerry(responses ?? []),
+          matchups,
+          responses: responses ?? [],
+        })
+      : buildReportPrompt({
+          firstName,
+          respondentName: submission.respondent_name as string,
+          pronouns: (submission.pronouns as string) || "they/them",
+          topNeeds,
+          matchups,
+        });
 
     const response = await anthropic.messages.create({
       model: "claude-opus-5",
