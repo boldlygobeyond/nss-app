@@ -38,13 +38,18 @@ export function questionFromRow(row: NssQuestionRow): SurveyQuestion {
   };
 }
 
+// Oct 2026 question-bank rebalance: the deployed app only ever serves the
+// original 50 (ids 1-50). The new 86-question bank (ids 51-136) lives in
+// the same table, gated behind a local-only env flag, so it can be tested
+// end-to-end without affecting what's actually live. Once the new bank
+// replaces the old one for real, drop this split and the id filter.
+const useNewBank = process.env.NEXT_PUBLIC_NSS_ENGINE === "bt";
+
 export async function fetchQuestions(
   supabase: SupabaseClient,
 ): Promise<SurveyQuestion[]> {
-  const { data, error } = await supabase
-    .from("nss_questions")
-    .select("*")
-    .order("id");
+  const query = supabase.from("nss_questions").select("*").order("id");
+  const { data, error } = useNewBank ? await query.gte("id", 51) : await query.lte("id", 50);
 
   if (error) throw error;
   return (data as NssQuestionRow[]).map(questionFromRow);
