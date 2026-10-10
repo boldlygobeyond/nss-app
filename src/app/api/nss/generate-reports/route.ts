@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { buildReportPrompt, buildReportPromptV2 } from "@/lib/nss/reportPrompts";
 import { archiveReportToDrive } from "@/lib/nss/googleDrive";
-import { notifyCrmLead } from "@/lib/nss/crm";
+import { notifyCrmLead, isNonLeadEmail } from "@/lib/nss/crm";
 import { sendAdminEmail } from "@/lib/nss/adminEmail";
 import { renderReportPdf } from "@/lib/nss/pdfRender";
 import { cacheReportPdf } from "@/lib/nss/pdfStorage";
@@ -173,21 +173,26 @@ export async function POST(request: Request) {
         const fullName = [profile?.first_name || firstName, profile?.last_name].filter(Boolean).join(" ");
 
         await Promise.allSettled([
+          // notifyCrmLead already skips internal/test-account emails itself.
           notifyCrmLead({
             firstName: profile?.first_name || firstName,
             lastName: profile?.last_name || "",
             email: submission.user_email as string,
             reportUrl: archived.pdfUrl,
           }),
-          sendAdminEmail(
-            "Diagnostics report completed",
-            [
-              `${fullName} just completed their Needs Signal Survey.`,
-              "",
-              `Email: ${submission.user_email}`,
-              `Report: ${archived.pdfUrl}`,
-            ].join("\n"),
-          ),
+          ...(isNonLeadEmail(submission.user_email as string)
+            ? []
+            : [
+                sendAdminEmail(
+                  "Diagnostics report completed",
+                  [
+                    `${fullName} just completed their Needs Signal Survey.`,
+                    "",
+                    `Email: ${submission.user_email}`,
+                    `Report: ${archived.pdfUrl}`,
+                  ].join("\n"),
+                ),
+              ]),
         ]);
       } catch (driveError) {
         // Best-effort — Drive archival is a backup copy, not required for the

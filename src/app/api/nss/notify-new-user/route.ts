@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { notifyCrmLead } from "@/lib/nss/crm";
+import { notifyCrmLead, isNonLeadEmail } from "@/lib/nss/crm";
 import { sendAdminEmail } from "@/lib/nss/adminEmail";
 
 // Hit by a Supabase Database Webhook on INSERT into public.user_profiles —
@@ -28,7 +28,8 @@ export async function POST(request: Request) {
   ].filter(Boolean);
 
   await Promise.allSettled([
-    sendAdminEmail("New Diagnostics sign-up", lines.join("\n")),
+    // notifyCrmLead already skips internal/test-account emails itself.
+    ...(isNonLeadEmail(record.email) ? [] : [sendAdminEmail("New Diagnostics sign-up", lines.join("\n"))]),
     notifyCrmLead({
       firstName: record.first_name ?? "",
       lastName: record.last_name ?? "",

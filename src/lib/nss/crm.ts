@@ -1,5 +1,15 @@
 const INTERNAL_EMAIL_DOMAIN = "@boldlygobeyond.com";
+const TEST_EMAIL_DOMAIN = "@test.com";
 const RETRY_DELAY_MS = 2000;
+
+// Shared by both CRM sync and the admin-email call sites — an internal
+// staffer's own dogfooding submission, or any address at the standing
+// test.com domain (anything@test.com, so multiple test accounts work), is
+// neither a real lead nor something an admin needs paged about.
+export function isNonLeadEmail(email: string): boolean {
+  const lower = email.toLowerCase().trim();
+  return lower.endsWith(INTERNAL_EMAIL_DOMAIN) || lower.endsWith(TEST_EMAIL_DOMAIN);
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -41,9 +51,9 @@ export async function notifyCrmLead(payload: {
   sourceParam?: string | null;
   reportUrl?: string | null;
 }): Promise<void> {
-  // Internal team members aren't leads — don't clutter the CRM tracking
-  // our own staff's test/dogfooding submissions.
-  if (payload.email.toLowerCase().endsWith(INTERNAL_EMAIL_DOMAIN)) {
+  // Internal team members and the standing test account aren't leads —
+  // don't clutter the CRM tracking test/dogfooding submissions.
+  if (isNonLeadEmail(payload.email)) {
     return;
   }
   if (!process.env.CRM_LEAD_INTAKE_API_KEY) {
