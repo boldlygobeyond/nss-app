@@ -19,7 +19,6 @@ import {
   seedDeliveryStateFromHistory,
   applyAnswerOutcome,
   initDeliveryState,
-  isTieBreakOnlyPair,
   btShouldStop,
   type DeliveryState,
 } from "@/lib/nss/adaptiveDelivery";
@@ -358,12 +357,11 @@ export default function SurveyClient() {
 
   // ── Greeting complete ─────────────────────────────────────────────────────
   const handleGreetingComplete = async (name: string, pronouns: string) => {
-    // Belonging-vs-Stability and Belonging-vs-Connections are last-resort
-    // only — excluded from calibration too, same as the adaptive phase.
-    const calibrationPool = USE_BT_ENGINE
-      ? questions.filter((q) => !isTieBreakOnlyPair(q.mappedClusters[0], q.mappedClusters[1]))
-      : questions;
-    const { calibration } = buildCalibrationSequence(calibrationPool);
+    // Belonging-vs-Stability and Belonging-vs-Connections stay last-resort
+    // only in the adaptive phase, but calibration now covers all 21 cluster
+    // pairs (including these two) so every pair gets at least one direct
+    // comparison to seed the Bradley-Terry fit with.
+    const { calibration } = buildCalibrationSequence(questions);
     setSequence(calibration);
     setUsedIds(new Set(calibration.map((q) => q.id)));
     setUserName(name);

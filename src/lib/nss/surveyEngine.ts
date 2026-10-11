@@ -102,55 +102,82 @@ export function shouldStop(tally: Tally, questionsAnswered: number): boolean {
 
 // ─── Question sequencing ─────────────────────────────────────────────────────
 
+function pairKey(a: ClusterKey, b: ClusterKey): string {
+  return [a, b].sort().join("|");
+}
+
 /**
  * Build the calibration sequence: Q1–Q21.
- * Guarantees every cluster appears exactly 3 times as A-side option
- * and 3 times as B-side option across 21 questions.
+ * With 7 clusters there are exactly 21 distinct cluster pairs, so the first
+ * pass guarantees one question per distinct pair present in the pool —
+ * every pair gets a direct comparison before adaptive selection takes over,
+ * rather than relying on per-cluster A/B balance alone (which could leave
+ * some pairs untested while others were asked 2-3 times). Any leftover
+ * budget (e.g. a pair with zero candidates in the pool) falls back to
+ * filling in clusters with the least A/B-side representation so far.
  */
 export function buildCalibrationSequence(questions: SurveyQuestion[]): {
   calibration: SurveyQuestion[];
   usedIds: Set<number>;
 } {
-  const TARGET = 3;
-  const aCounts = {} as Record<ClusterKey, number>;
-  const bCounts = {} as Record<ClusterKey, number>;
-  CLUSTERS.forEach((c) => {
-    aCounts[c] = 0;
-    bCounts[c] = 0;
-  });
-
+  const BUDGET = 21;
   const pool = shuffleArray(questions);
+
+  const byPair = new Map<string, SurveyQuestion[]>();
+  for (const q of pool) {
+    const [cA, cB] = q.mappedClusters;
+    if (!cA || !cB) continue;
+    const key = pairKey(cA, cB);
+    const bucket = byPair.get(key);
+    if (bucket) bucket.push(q);
+    else byPair.set(key, [q]);
+  }
+
   const selected: SurveyQuestion[] = [];
   const used = new Set<number>();
 
-  for (let pass = 0; pass < 3 && selected.length < 21; pass++) {
-    for (const q of pool) {
-      if (used.has(q.id) || selected.length >= 21) continue;
-      const [cA, cB] = q.mappedClusters;
-      if (!cA || !cB) continue;
-      if (aCounts[cA] < TARGET && bCounts[cB] < TARGET) {
-        selected.push(q);
-        used.add(q.id);
-        aCounts[cA]++;
-        bCounts[cB]++;
-      }
+  for (const candidates of byPair.values()) {
+    if (selected.length >= BUDGET) break;
+    const pick = candidates.find((q) => !used.has(q.id));
+    if (pick) {
+      selected.push(pick);
+      used.add(pick.id);
     }
   }
 
-  // If we couldn't fill 21 cleanly (edge case), pad with any unused question
-  if (selected.length < 21) {
-    for (const q of pool) {
-      if (selected.length >= 21) break;
-      if (!used.has(q.id)) {
-        selected.push(q);
-        used.add(q.id);
-      }
+  if (selected.length < BUDGET) {
+    const aCounts = {} as Record<ClusterKey, number>;
+    const bCounts = {} as Record<ClusterKey, number>;
+    CLUSTERS.forEach((c) => {
+      aCounts[c] = 0;
+      bCounts[c] = 0;
+    });
+    selected.forEach((q) => {
+      const [cA, cB] = q.mappedClusters;
+      aCounts[cA]++;
+      bCounts[cB]++;
+    });
+
+    const remaining = pool
+      .filter((q) => !used.has(q.id))
+      .sort((x, y) => {
+        const xScore = aCounts[x.mappedClusters[0]] + bCounts[x.mappedClusters[1]];
+        const yScore = aCounts[y.mappedClusters[0]] + bCounts[y.mappedClusters[1]];
+        return xScore - yScore;
+      });
+
+    for (const q of remaining) {
+      if (selected.length >= BUDGET) break;
+      selected.push(q);
+      used.add(q.id);
+      aCounts[q.mappedClusters[0]]++;
+      bCounts[q.mappedClusters[1]]++;
     }
   }
 
   return {
-    calibration: selected.slice(0, 21),
-    usedIds: new Set(selected.slice(0, 21).map((q) => q.id)),
+    calibration: selected.slice(0, BUDGET),
+    usedIds: new Set(selected.slice(0, BUDGET).map((q) => q.id)),
   };
 }
 
