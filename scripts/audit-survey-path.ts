@@ -109,11 +109,20 @@ async function main() {
   const adaptiveResponses = responses.filter((r) => !calibrationIds.has(r.question_id));
 
   // ── Calibration (Q1-21): fixed sequence, not selected by adaptiveDelivery ──
+  // Walk the full 21-id sequence, not calibrationResponses — a question the
+  // respondent skipped (via "it depends" -> still unsure -> Skip) is still a
+  // real calibration slot that was PRESENTED and consumed from usedIds, it
+  // just has no response row. Printing only the answered subset silently
+  // dropped skipped slots from the Q1-21 list entirely.
   console.log("=== Q1-21: fixed calibration sequence (not tier-selected) ===");
-  calibrationResponses.forEach((r, i) => {
-    const q = qMap[r.question_id];
+  const responseByQid = new Map(responses.map((r) => [r.question_id, r]));
+  const calibrationSequence = (submission.question_sequence as number[]).slice(0, 21);
+  calibrationSequence.forEach((qid, i) => {
+    const q = qMap[qid];
     const pair = q ? `${q.mappedClusters[0]}/${q.mappedClusters[1]}` : "?";
-    console.log(`  ${i + 1}. #${r.question_id} [${pair}]${r.is_sharpened ? "  (it depends)" : ""}`);
+    const r = responseByQid.get(qid);
+    const status = r ? (r.is_sharpened ? "  (it depends)" : "") : "  (SKIPPED — no answer recorded)";
+    console.log(`  ${i + 1}. #${qid} [${pair}]${status}`);
   });
 
   // ── Adaptive phase: replay tier classification against CURRENT logic ──
@@ -149,13 +158,29 @@ async function main() {
   );
 
   const calibrationCount = calibrationResponses.length;
+  const fullSequence = submission.question_sequence as number[];
   for (let j = 0; j < adaptiveResponses.length; j++) {
     const i = calibrationCount + j; // position in the full chronological history
     const btResponsesSoFar: BtResponse[] = [...calibrationResponses, ...adaptiveResponses.slice(0, j)].map((r) => ({
       chosen_clusters: r.chosen_clusters,
       rejected_clusters: r.rejected_clusters,
     }));
-    const usedIds = new Set([...calibrationResponses, ...adaptiveResponses.slice(0, j)].map((r) => r.question_id));
+    // usedIds has to be every question_id ever PRESENTED up to this point —
+    // sourced from question_sequence, not from response rows. A skipped
+    // question (calibration or adaptive) gets no response row but is still
+    // permanently consumed from usedIds the moment it's shown (set at
+    // calibration-build time for all 21 slots at once, or via newUsed.add()
+    // the instant an adaptive pick is selected, in SurveyClient.tsx) — it
+    // can never be re-offered even though it was never answered. Building
+    // usedIds from response rows alone (an earlier version of this script
+    // did that) makes a skipped question look "available" again, which lets
+    // the replay pick it when the real app structurally could not — this
+    // was confirmed against a real run where the only 3 questions for a
+    // thin pair were a skip + two real answers, and the replay kept
+    // "finding" the skipped one available long after the real app had
+    // exhausted that pair's entire pool.
+    const seqPos = fullSequence.indexOf(adaptiveResponses[j].question_id);
+    const usedIds = new Set(fullSequence.slice(0, seqPos));
 
     const replay = selectNextBtQuestion(questions, btResponsesSoFar, usedIds, state, i);
     const actual = adaptiveResponses[j];
