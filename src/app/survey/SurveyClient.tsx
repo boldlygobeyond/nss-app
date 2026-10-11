@@ -30,6 +30,7 @@ import {
   updateSubmissionProgress,
   finishSubmission,
   insertResponse,
+  deleteResponseForQuestion,
   findInProgressSubmission,
   listResponsesForSubmission,
 } from "@/lib/nss/api";
@@ -170,10 +171,55 @@ export default function SurveyClient() {
   // questions each got answered twice, back to back, with identical
   // selections). Guards both handlers; clears once the next question
   // actually renders.
+  //
+  // Confirmed by reproducing it directly: if anything inside handleAnswer
+  // throws after processingRef is set but before the state updates that
+  // would normally change currentQuestion/isSharpened, the effect below
+  // never fires and the guard stays stuck forever — freezing the survey
+  // with no error shown, recoverable only by reloading the page. The
+  // timeout is a safety net: it only ever fires if something went wrong,
+  // since the effect above always clears it first on a normal transition.
   const processingRef = useRef(false);
+  const unstickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     processingRef.current = false;
+    if (unstickTimerRef.current) {
+      clearTimeout(unstickTimerRef.current);
+      unstickTimerRef.current = null;
+    }
   }, [currentQuestion, isSharpened]);
+  useEffect(() => {
+    return () => {
+      if (unstickTimerRef.current) clearTimeout(unstickTimerRef.current);
+    };
+  }, []);
+
+  const beginProcessing = useCallback(() => {
+    if (processingRef.current) return false;
+    processingRef.current = true;
+    unstickTimerRef.current = setTimeout(() => {
+      console.error("[SurveyClient] processingRef stuck for 2s — auto-unstuck. This means handleAnswer/handleSkip hit an error; check above for the real cause.");
+      processingRef.current = false;
+      unstickTimerRef.current = null;
+    }, 2000);
+    return true;
+  }, []);
+
+  // Per-question write queue: a correction's delete-then-insert and the
+  // original answer's insert are both independent, unawaited network calls
+  // with no inherent ordering — confirmed by testing (a fast correction's
+  // delete fired, found nothing yet, then the slower original insert
+  // landed last, leaving both rows). Chaining each question's writes onto
+  // whatever is already pending for that same question_id guarantees they
+  // always land in the order they were initiated, regardless of individual
+  // request timing.
+  const pendingWritesRef = useRef<Map<number, Promise<void>>>(new Map());
+  const queueWrite = useCallback((questionId: number, write: () => Promise<void>) => {
+    const prior = pendingWritesRef.current.get(questionId) ?? Promise.resolve();
+    const chained = prior.then(write).catch(() => {});
+    pendingWritesRef.current.set(questionId, chained);
+    return chained;
+  }, []);
 
   // ── Bootstrap: load questions + auth + resume state ──────────────────────
   useEffect(() => {
@@ -399,28 +445,21 @@ export default function SurveyClient() {
   // ── Answer handler ─────────────────────────────────────────────────────────
   const handleAnswer = useCallback(
     (choice: "A" | "B") => {
-      if (!currentQuestion || processingRef.current) return;
-      processingRef.current = true;
-
+      if (!currentQuestion || !beginProcessing()) return;
+      try {
       const [clusterA, clusterB] = currentQuestion.mappedClusters;
       const chosenClusters = choice === "A" ? [clusterA] : [clusterB];
       const rejectedClusters = choice === "A" ? [clusterB] : [clusterA];
 
-      const newTally = recordAnswer(tally, chosenClusters, rejectedClusters);
-      setTally(newTally);
-
-      const newBtResponses = USE_BT_ENGINE
-        ? [...btResponses, { chosen_clusters: chosenClusters, rejected_clusters: rejectedClusters }]
-        : btResponses;
-      if (USE_BT_ENGINE) setBtResponses(newBtResponses);
-
-      const outcomeState = USE_BT_ENGINE
-        ? applyAnswerOutcome(deliveryState, currentQuestion.mappedClusters, isSharpened)
-        : deliveryState;
-      if (USE_BT_ENGINE) setDeliveryState(outcomeState);
-
-      const newAnswered = questionsAnswered + 1;
-      setQuestionsAnswered(newAnswered);
+      // Back lets a respondent return to an already-answered question and
+      // choose again. The original answer previously stayed on top as a
+      // second, independent data point — both counted in scoring, and it
+      // silently consumed an extra slot from the fixed 50-question budget
+      // without asking anything new. Only the final choice should count:
+      // detect the correction and replace the prior entry instead of
+      // appending.
+      const priorIndex = answeredDetails.findIndex((d) => d.question_id === currentQuestion.id);
+      const isCorrection = priorIndex !== -1;
 
       const version = isSharpened ? currentQuestion.sharpened : currentQuestion.standard;
       const detail: AnsweredDetail = {
@@ -433,21 +472,65 @@ export default function SurveyClient() {
         is_sharpened_question: isSharpened,
         ...(isSharpened && lastQuestionId ? { original_question_id: lastQuestionId } : {}),
       };
-      const newDetails = [...answeredDetails, detail];
+      const newDetails = isCorrection
+        ? answeredDetails.map((d, i) => (i === priorIndex ? detail : d))
+        : [...answeredDetails, detail];
       setAnsweredDetails(newDetails);
+
+      // Rebuilt from newDetails (the corrected source of truth) rather than
+      // patched incrementally — a correction replaces one entry in the
+      // middle of the history, which an append-only update can't express
+      // without drifting out of sync with what was actually answered.
+      const newTally = newDetails.reduce(
+        (t, d) => recordAnswer(t, d.chosen_clusters as ClusterKey[], d.rejected_clusters as ClusterKey[]),
+        initTally(),
+      );
+      setTally(newTally);
+
+      const newBtResponses: BtResponse[] = USE_BT_ENGINE
+        ? newDetails.map((d) => ({
+            chosen_clusters: d.chosen_clusters as ClusterKey[],
+            rejected_clusters: d.rejected_clusters as ClusterKey[],
+          }))
+        : btResponses;
+      if (USE_BT_ENGINE) setBtResponses(newBtResponses);
+
+      // Changing your mind is itself a signal of uncertainty on this pair —
+      // flag it the same way a sharpened "it depends" answer does, so the
+      // delivery logic re-tests the pair with a different question instead
+      // of treating the correction as if it were always confident.
+      const outcomeState = USE_BT_ENGINE
+        ? applyAnswerOutcome(deliveryState, currentQuestion.mappedClusters, isSharpened || isCorrection)
+        : deliveryState;
+      if (USE_BT_ENGINE) setDeliveryState(outcomeState);
+
+      const newAnswered = isCorrection ? questionsAnswered : questionsAnswered + 1;
+      setQuestionsAnswered(newAnswered);
+
       if (!isSharpened) setLastQuestionId(currentQuestion.id);
       setIsSharpened(false);
 
       if (submissionId) {
-        insertResponse(supabase, {
-          submissionId,
-          questionId: currentQuestion.id,
-          originalQuestionId: detail.original_question_id ?? null,
-          isSharpened: detail.is_sharpened_question,
-          selection: choice,
-          chosenClusters,
-          rejectedClusters,
-        }).catch(() => {});
+        const questionId = currentQuestion.id;
+        const originalQuestionId = detail.original_question_id ?? null;
+        const isSharpenedFlag = detail.is_sharpened_question;
+        // Always delete-then-insert, even on a first answer (a no-op
+        // delete) — idempotent and self-correcting, so this queued write
+        // always leaves exactly one row for this question matching
+        // whatever was answered last, regardless of how isCorrection was
+        // computed on the client.
+        queueWrite(questionId, async () => {
+          await deleteResponseForQuestion(supabase, submissionId, questionId);
+          await insertResponse(supabase, {
+            submissionId,
+            questionId,
+            originalQuestionId,
+            isSharpened: isSharpenedFlag,
+            selection: choice,
+            chosenClusters,
+            rejectedClusters,
+          });
+        });
       }
 
       const stopNow = USE_BT_ENGINE
@@ -499,6 +582,11 @@ export default function SurveyClient() {
       setSequence(newSeq);
       setUsedIds(newUsed);
       setQuestionIndex(nextIdx);
+      } catch (error) {
+        // The unstick timeout recovers either way, but log the real cause
+        // rather than let this surface only as a mysterious 2s freeze.
+        console.error("[SurveyClient] handleAnswer failed:", error);
+      }
     },
     [
       currentQuestion,
@@ -516,6 +604,8 @@ export default function SurveyClient() {
       finishSurvey,
       btResponses,
       deliveryState,
+      beginProcessing,
+      queueWrite,
     ],
   );
 
@@ -523,50 +613,53 @@ export default function SurveyClient() {
   const handleItDepends = useCallback(() => setIsSharpened(true), []);
 
   const handleSkip = useCallback(() => {
-    if (processingRef.current) return;
-    processingRef.current = true;
-    setIsSharpened(false);
-    const nextIdx = questionIndex + 1;
-    if (nextIdx < sequence.length) {
-      setQuestionIndex(nextIdx);
-      return;
-    }
+    if (!beginProcessing()) return;
+    try {
+      setIsSharpened(false);
+      const nextIdx = questionIndex + 1;
+      if (nextIdx < sequence.length) {
+        setQuestionIndex(nextIdx);
+        return;
+      }
 
-    if (USE_BT_ENGINE) {
-      const next = pullNextQuestionBt(
-        questions,
-        btResponses,
-        usedIds,
-        deliveryState,
-        questionsAnswered,
-        sequence.length === 21,
-        answeredDetails,
-      );
-      if (!next) {
+      if (USE_BT_ENGINE) {
+        const next = pullNextQuestionBt(
+          questions,
+          btResponses,
+          usedIds,
+          deliveryState,
+          questionsAnswered,
+          sequence.length === 21,
+          answeredDetails,
+        );
+        if (!next) {
+          finishSurvey(tally, questionsAnswered, sequence, btResponses);
+          return;
+        }
+        const newSeq = [...sequence, next.question];
+        const newUsed = new Set(usedIds);
+        newUsed.add(next.question.id);
+        setSequence(newSeq);
+        setUsedIds(newUsed);
+        setDeliveryState(next.nextState);
+        setQuestionIndex(nextIdx);
+        return;
+      }
+
+      const block = selectAdaptiveBlock(questions, tally, usedIds);
+      if (block.length === 0) {
         finishSurvey(tally, questionsAnswered, sequence, btResponses);
         return;
       }
-      const newSeq = [...sequence, next.question];
+      const newSeq = [...sequence, ...block];
       const newUsed = new Set(usedIds);
-      newUsed.add(next.question.id);
+      block.forEach((q) => newUsed.add(q.id));
       setSequence(newSeq);
       setUsedIds(newUsed);
-      setDeliveryState(next.nextState);
       setQuestionIndex(nextIdx);
-      return;
+    } catch (error) {
+      console.error("[SurveyClient] handleSkip failed:", error);
     }
-
-    const block = selectAdaptiveBlock(questions, tally, usedIds);
-    if (block.length === 0) {
-      finishSurvey(tally, questionsAnswered, sequence, btResponses);
-      return;
-    }
-    const newSeq = [...sequence, ...block];
-    const newUsed = new Set(usedIds);
-    block.forEach((q) => newUsed.add(q.id));
-    setSequence(newSeq);
-    setUsedIds(newUsed);
-    setQuestionIndex(nextIdx);
   }, [
     questionIndex,
     sequence,
@@ -578,6 +671,7 @@ export default function SurveyClient() {
     btResponses,
     deliveryState,
     answeredDetails,
+    beginProcessing,
   ]);
 
   const handleBack = useCallback(() => {

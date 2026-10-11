@@ -148,6 +148,29 @@ export async function insertResponse(
   if (error) throw error;
 }
 
+/**
+ * Removes a submission's prior response to a question, so a corrected
+ * answer (the respondent used Back and chose again) can be re-inserted in
+ * its place rather than left alongside it as a second, contradictory data
+ * point. There's no unique constraint on (submission_id, question_id) to
+ * upsert against — a respondent answering a question once is the normal
+ * case this schema was built for — so this is an explicit delete-then-
+ * insert rather than a single atomic write.
+ */
+export async function deleteResponseForQuestion(
+  supabase: SupabaseClient,
+  submissionId: string,
+  questionId: number,
+): Promise<void> {
+  const { error } = await supabase
+    .from("nss_responses")
+    .delete()
+    .eq("submission_id", submissionId)
+    .eq("question_id", questionId);
+
+  if (error) throw error;
+}
+
 export async function listResponsesForSubmission(
   supabase: SupabaseClient,
   submissionId: string,

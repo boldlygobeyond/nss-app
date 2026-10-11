@@ -171,18 +171,28 @@ function applyClusterCooldown(
   });
 }
 
+/**
+ * Which rule actually supplied the chosen question — returned alongside the
+ * pick so a submission's real path can be audited after the fact (was the
+ * staleness guard doing its job, was a validation request honored promptly,
+ * did a tie-break-only pair only ever fire as a genuine last resort) without
+ * having to re-derive it by eye from raw response rows.
+ */
+export type SelectionTier = "staleness" | "validation" | "default" | "guard-relaxed" | "tie-break-last-resort";
+
 export function selectNextBtQuestion(
   questions: SurveyQuestion[],
   responses: BtResponse[],
   usedIds: Set<number>,
   state: DeliveryState,
   questionIndex: number,
-): { question: SurveyQuestion; nextState: DeliveryState } | null {
+): { question: SurveyQuestion; nextState: DeliveryState; tier: SelectionTier } | null {
   const available = questions.filter((q) => !usedIds.has(q.id));
   if (available.length === 0) return null;
 
   const normalPool = available.filter((q) => !isTieBreakOnlyPair(q.mappedClusters[0], q.mappedClusters[1]));
-  const pool = normalPool.length > 0 ? normalPool : available;
+  const usingTieBreakPool = normalPool.length === 0;
+  const pool = usingTieBreakPool ? available : normalPool;
 
   const strengths = fitBradleyTerry(responses);
   const strengthOf = Object.fromEntries(CLUSTERS.map((c, i) => [c, strengths[i]])) as Record<ClusterKey, number>;
@@ -215,14 +225,27 @@ export function selectNextBtQuestion(
 
   let candidates = guarded(stalenessEntries);
   const stalenessTierActive = candidates.length > 0;
-  if (candidates.length === 0) candidates = guarded(validationEntries);
-  if (candidates.length === 0) candidates = guarded(allEntries);
+  let tier: SelectionTier = "staleness";
+  if (candidates.length === 0) {
+    candidates = guarded(validationEntries);
+    tier = "validation";
+  }
+  if (candidates.length === 0) {
+    candidates = guarded(allEntries);
+    tier = "default";
+  }
   // Relax guards one at a time, weakest first, only once every tier above
   // has genuinely nothing left — cluster cooldown before the pair cap,
   // since repeating the literal same question back to back is worse than
   // two different questions merely sharing a cluster.
-  if (candidates.length === 0) candidates = applyRepeatCap(allEntries, state);
-  if (candidates.length === 0) candidates = allEntries;
+  if (candidates.length === 0) {
+    candidates = applyRepeatCap(allEntries, state);
+    tier = "guard-relaxed";
+  }
+  if (candidates.length === 0) {
+    candidates = allEntries;
+    tier = "guard-relaxed";
+  }
 
   const strengthGap = (key: string) => {
     const [a, b] = key.split("|") as ClusterKey[];
@@ -266,7 +289,7 @@ export function selectNextBtQuestion(
     pendingValidation: state.pendingValidation,
   };
 
-  return { question, nextState };
+  return { question, nextState, tier: usingTieBreakPool ? "tie-break-last-resort" : tier };
 }
 
 /**
