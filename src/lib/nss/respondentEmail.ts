@@ -10,10 +10,6 @@
 // Resend's own open-tracking (toggled in the domain settings, no code
 // here) covers the looser "did it land" signal as a complement.
 //
-// CALENDAR_BOOKING_URL is a plain env var (not NEXT_PUBLIC_, server-only) so
-// the booking link can change without a redeploy.
-const CALENDAR_BOOKING_URL = process.env.CALENDAR_BOOKING_URL;
-
 export async function sendRespondentReportEmail(params: {
   to: string;
   firstName: string;
@@ -23,6 +19,11 @@ export async function sendRespondentReportEmail(params: {
 }): Promise<void> {
   const { to, firstName, pdfBuffer, downloadUrl, logoUrl } = params;
 
+  // Read at call time, not module load — a plain env var (not NEXT_PUBLIC_,
+  // server-only) so the booking link can change without a redeploy, and so
+  // it's picked up correctly regardless of when this module was imported
+  // relative to when the environment was populated.
+  const CALENDAR_BOOKING_URL = process.env.CALENDAR_BOOKING_URL;
   if (!CALENDAR_BOOKING_URL) {
     console.error("[respondent-email] CALENDAR_BOOKING_URL not set, skipping send");
     return;
