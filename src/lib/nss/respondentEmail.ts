@@ -88,7 +88,7 @@ export async function sendRespondentReportEmail(params: {
                   <tr>
                     <td style="border-radius:8px; background-color:#0a0e17;">
                       <a href="${CALENDAR_BOOKING_URL}" style="display:inline-block; padding:12px 24px; font-size:15px; font-weight:600; color:#ffffff; text-decoration:none;">
-                        Let's Decode Your Signals
+                        📅 Let's Decode Your Signals
                       </a>
                     </td>
                   </tr>
@@ -101,7 +101,8 @@ export async function sendRespondentReportEmail(params: {
 
                 <p style="margin:0 0 4px; font-size:14px; line-height:1.6; color:#374151;">Best,</p>
                 <p style="margin:0 0 2px; font-size:14px; font-weight:600; color:#111827;">Marc Chiu</p>
-                <p style="margin:0 0 16px; font-size:13px; color:#6b7280;">Founder &amp; CEO | Boldly Go Beyond</p>
+                <p style="margin:0 0 20px; font-size:13px; color:#6b7280;">Founder &amp; CEO | Boldly Go Beyond</p>
+                <p style="margin:0 0 6px; font-size:13px; font-style:italic; color:#6b7280;">See the signals. Decode the system. Unlock what&rsquo;s possible.</p>
                 <p style="margin:0 0 32px; font-size:13px;">
                   <a href="https://boldlygobeyond.com?utm_source=NSS_report&amp;utm_medium=email&amp;utm_campaign=NSS_Report_Email&amp;utm_id=NSS" style="color:#0d9488; text-decoration:none;">www.boldlygobeyond.com</a>
                 </p>
