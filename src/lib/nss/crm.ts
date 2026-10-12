@@ -21,6 +21,8 @@ async function postIntake(payload: {
   email: string;
   sourceParam?: string | null;
   reportUrl?: string | null;
+  reportPortalDownloadedAt?: string | null;
+  reportEmailDownloadedAt?: string | null;
 }): Promise<Response> {
   return fetch("https://crm.boldlygobeyond.com/api/leads/intake", {
     method: "POST",
@@ -34,6 +36,12 @@ async function postIntake(payload: {
       email: payload.email,
       ...(payload.sourceParam ? { sourceParam: payload.sourceParam } : {}),
       ...(payload.reportUrl ? { reportUrl: payload.reportUrl } : {}),
+      ...(payload.reportPortalDownloadedAt
+        ? { reportPortalDownloadedAt: payload.reportPortalDownloadedAt }
+        : {}),
+      ...(payload.reportEmailDownloadedAt
+        ? { reportEmailDownloadedAt: payload.reportEmailDownloadedAt }
+        : {}),
     }),
   });
 }
@@ -50,6 +58,8 @@ export async function notifyCrmLead(payload: {
   email: string;
   sourceParam?: string | null;
   reportUrl?: string | null;
+  reportPortalDownloadedAt?: string | null;
+  reportEmailDownloadedAt?: string | null;
 }): Promise<void> {
   // Internal team members and the standing test account aren't leads —
   // don't clutter the CRM tracking test/dogfooding submissions.

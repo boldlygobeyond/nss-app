@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getMyProfile } from "@/lib/nss/userProfiles";
 import { getCachedReportPdf } from "@/lib/nss/pdfStorage";
 import { buildReportFileName } from "@/lib/nss/reportFilename";
+import { notifyCrmLead } from "@/lib/nss/crm";
 
 // Unauthenticated on purpose — this is the link the respondent clicks from
 // their inbox, which can't assume an active app session. pdf_download_token
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
   const admin = createAdminClient();
   const { data: submission, error } = await admin
     .from("nss_submissions")
-    .select("id, user_id, respondent_name, updated_at, pdf_download_token, pdf_email_downloaded_at")
+    .select("id, user_id, user_email, respondent_name, updated_at, pdf_download_token, pdf_email_downloaded_at")
     .eq("id", submissionId)
     .maybeSingle();
 
@@ -34,17 +35,31 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Report not ready yet" }, { status: 404 });
   }
 
+  const profile = await getMyProfile(admin, submission.user_id).catch(() => null);
+
   // First-touch only — a repeat click (recipient re-downloading later)
-  // shouldn't overwrite the original "they got it" timestamp.
+  // shouldn't overwrite the original "they got it" timestamp, and the CRM
+  // push is nested in here so it only fires once too, not on every click.
   if (!submission.pdf_email_downloaded_at) {
+    const downloadedAt = new Date().toISOString();
     await admin
       .from("nss_submissions")
-      .update({ pdf_email_downloaded_at: new Date().toISOString() })
+      .update({ pdf_email_downloaded_at: downloadedAt })
       .eq("id", submissionId)
       .is("pdf_email_downloaded_at", null);
+
+    if (submission.user_email) {
+      const firstName = profile?.first_name || (submission.respondent_name as string).split(" ")[0];
+      const lastName = profile?.last_name || "";
+      const email = submission.user_email as string;
+      after(() =>
+        notifyCrmLead({ firstName, lastName, email, reportEmailDownloadedAt: downloadedAt }).catch(
+          (crmError) => console.warn("[report-pdf-download] CRM notify failed:", crmError),
+        ),
+      );
+    }
   }
 
-  const profile = await getMyProfile(admin, submission.user_id).catch(() => null);
   const fileName = `${buildReportFileName(
     profile?.first_name,
     profile?.last_name,

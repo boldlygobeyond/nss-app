@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -7,6 +7,7 @@ import { getMyProfile } from "@/lib/nss/userProfiles";
 import { renderReportPdf } from "@/lib/nss/pdfRender";
 import { getCachedReportPdf, cacheReportPdf } from "@/lib/nss/pdfStorage";
 import { buildReportFileName } from "@/lib/nss/reportFilename";
+import { notifyCrmLead } from "@/lib/nss/crm";
 
 export const maxDuration = 60;
 
@@ -53,13 +54,30 @@ export async function GET(request: Request) {
 
     // First-touch only — matches the same pattern as the emailed link's
     // own download tracking, kept as a separate column so the two signals
-    // (portal vs. email) don't collide into one timestamp.
+    // (portal vs. email) don't collide into one timestamp. The CRM push is
+    // nested in here too, on purpose — it should only fire once, the same
+    // moment the local column is actually set, not on every repeat click.
     if (!submission.pdf_portal_downloaded_at) {
+      const downloadedAt = new Date().toISOString();
       await admin
         .from("nss_submissions")
-        .update({ pdf_portal_downloaded_at: new Date().toISOString() })
+        .update({ pdf_portal_downloaded_at: downloadedAt })
         .eq("id", submissionId)
         .is("pdf_portal_downloaded_at", null);
+
+      if (submission.user_email) {
+        const firstName = profile?.first_name || submission.respondent_name.split(" ")[0];
+        const lastName = profile?.last_name || "";
+        const email = submission.user_email;
+        // after() so this survives past the response below instead of
+        // risking the function terminating mid-fetch on a bare
+        // fire-and-forget call.
+        after(() =>
+          notifyCrmLead({ firstName, lastName, email, reportPortalDownloadedAt: downloadedAt }).catch(
+            (crmError) => console.warn("[generate-pdf] CRM notify failed:", crmError),
+          ),
+        );
+      }
     }
 
     const fileName = `${buildReportFileName(
