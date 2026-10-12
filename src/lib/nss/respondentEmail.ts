@@ -1,23 +1,23 @@
 // Sends the respondent their completed Needs Signal Report via Resend: an
-// HTML email with the logo, plus the PDF attached directly (per decision:
-// attach rather than link, since it must work with no app session and
-// doesn't depend on Drive archival succeeding first) and a separate,
-// token-gated download link for tracking (see report-pdf-download route) —
-// a link click is a far more reliable "they got it" signal than an email
-// open pixel, which Apple Mail Privacy Protection and various client image
-// proxies fire regardless of whether a human looked.
+// HTML email with the logo and a token-gated download link (see
+// report-pdf-download route) — deliberately NOT also attached. The link is
+// the tracking signal (pdf_downloaded_at is set when it's clicked); if the
+// PDF were attached too, most recipients would just open that instead and
+// the link — the thing we actually want a read on — would rarely get
+// clicked. A link click is also a far more reliable "they got it" signal
+// than an email-open pixel, which Apple Mail Privacy Protection and various
+// client image proxies fire regardless of whether a human looked.
 //
 // Resend's own open-tracking (toggled in the domain settings, no code
-// here) covers the looser "did it land" signal as a complement.
+// here) covers that looser "did it land" signal as a complement.
 //
 export async function sendRespondentReportEmail(params: {
   to: string;
   firstName: string;
-  pdfBuffer: Buffer;
   downloadUrl: string;
   logoUrl: string;
 }): Promise<void> {
-  const { to, firstName, pdfBuffer, downloadUrl, logoUrl } = params;
+  const { to, firstName, downloadUrl, logoUrl } = params;
 
   // Read at call time, not module load — a plain env var (not NEXT_PUBLIC_,
   // server-only) so the booking link can change without a redeploy, and so
@@ -127,12 +127,6 @@ export async function sendRespondentReportEmail(params: {
         to,
         subject: "Your Needs Signal Report is ready 🚀",
         html,
-        attachments: [
-          {
-            filename: "needs-signal-report.pdf",
-            content: pdfBuffer.toString("base64"),
-          },
-        ],
       }),
     });
     if (!res.ok) {

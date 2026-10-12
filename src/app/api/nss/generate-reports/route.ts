@@ -214,7 +214,6 @@ export async function POST(request: Request) {
                   sendRespondentReportEmail({
                     to: submission.user_email as string,
                     firstName: profile?.first_name || firstName,
-                    pdfBuffer,
                     downloadUrl: `${origin}/api/nss/report-pdf-download?id=${submissionId}&token=${pdfDownloadToken}`,
                     logoUrl: `${origin}/logo/bgb-line-almond.png`,
                   }),
