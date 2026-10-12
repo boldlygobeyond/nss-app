@@ -2,7 +2,16 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 const EXACT_PUBLIC_PATHS = ["/"];
-const PUBLIC_PATH_PREFIXES = ["/login", "/auth", "/api/nss/notify-new-user", "/api/nss/lead-signup"];
+const PUBLIC_PATH_PREFIXES = [
+  "/login",
+  "/auth",
+  "/api/nss/notify-new-user",
+  "/api/nss/lead-signup",
+  // The email recipient clicking this link isn't logged in — the
+  // pdf_download_token in the URL is its own auth, checked inside the
+  // route itself, not via Supabase session.
+  "/api/nss/report-pdf-download",
+];
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
