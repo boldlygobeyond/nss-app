@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const submissionId = searchParams.get("id");
   const token = searchParams.get("token");
   if (!submissionId || !token) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "Not found" }, { status: 404, headers: { "X-Debug-Marker": "route-handler-ran" } });
   }
 
   const admin = createAdminClient();
