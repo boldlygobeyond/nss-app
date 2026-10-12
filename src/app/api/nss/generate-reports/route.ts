@@ -7,6 +7,8 @@ import { buildReportPrompt, buildReportPromptV2 } from "@/lib/nss/reportPrompts"
 import { archiveReportToDrive } from "@/lib/nss/googleDrive";
 import { notifyCrmLead, isNonLeadEmail } from "@/lib/nss/crm";
 import { sendAdminEmail } from "@/lib/nss/adminEmail";
+import { sendRespondentReportEmail } from "@/lib/nss/respondentEmail";
+import { randomBytes } from "node:crypto";
 import { renderReportPdf } from "@/lib/nss/pdfRender";
 import { cacheReportPdf } from "@/lib/nss/pdfStorage";
 import { computePairwiseMatchups, type TopNeed } from "@/lib/nss/surveyEngine";
@@ -172,9 +174,14 @@ export async function POST(request: Request) {
             userEmail: submission.user_email as string,
             pdfBuffer,
           });
+          const pdfDownloadToken = randomBytes(24).toString("hex");
           await supabase
             .from("nss_submissions")
-            .update({ pdf_url: archived.pdfUrl, pdf_drive_id: archived.pdfDriveId })
+            .update({
+              pdf_url: archived.pdfUrl,
+              pdf_drive_id: archived.pdfDriveId,
+              pdf_download_token: pdfDownloadToken,
+            })
             .eq("id", submissionId);
 
           const { data: profile } = await supabase
@@ -204,6 +211,13 @@ export async function POST(request: Request) {
                       `Report: ${archived.pdfUrl}`,
                     ].join("\n"),
                   ),
+                  sendRespondentReportEmail({
+                    to: submission.user_email as string,
+                    firstName: profile?.first_name || firstName,
+                    pdfBuffer,
+                    downloadUrl: `${origin}/api/nss/report-pdf-download?id=${submissionId}&token=${pdfDownloadToken}`,
+                    logoUrl: `${origin}/logo/bgb-line-almond.png`,
+                  }),
                 ]),
           ]);
         } catch (driveError) {
