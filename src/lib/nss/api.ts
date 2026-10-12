@@ -18,6 +18,9 @@ export interface NssSubmission {
   report_data: ReportData | null;
   pdf_url: string | null;
   pdf_drive_id: string | null;
+  pdf_download_token: string | null;
+  pdf_email_downloaded_at: string | null;
+  pdf_portal_downloaded_at: string | null;
   updated_at: string;
 }
 

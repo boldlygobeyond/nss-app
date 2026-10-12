@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   const admin = createAdminClient();
   const { data: submission, error } = await admin
     .from("nss_submissions")
-    .select("id, user_id, respondent_name, updated_at, pdf_download_token, pdf_downloaded_at")
+    .select("id, user_id, respondent_name, updated_at, pdf_download_token, pdf_email_downloaded_at")
     .eq("id", submissionId)
     .maybeSingle();
 
@@ -36,12 +36,12 @@ export async function GET(request: Request) {
 
   // First-touch only — a repeat click (recipient re-downloading later)
   // shouldn't overwrite the original "they got it" timestamp.
-  if (!submission.pdf_downloaded_at) {
+  if (!submission.pdf_email_downloaded_at) {
     await admin
       .from("nss_submissions")
-      .update({ pdf_downloaded_at: new Date().toISOString() })
+      .update({ pdf_email_downloaded_at: new Date().toISOString() })
       .eq("id", submissionId)
-      .is("pdf_downloaded_at", null);
+      .is("pdf_email_downloaded_at", null);
   }
 
   const profile = await getMyProfile(admin, submission.user_id).catch(() => null);

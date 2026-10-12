@@ -51,6 +51,17 @@ export async function GET(request: Request) {
       );
     }
 
+    // First-touch only — matches the same pattern as the emailed link's
+    // own download tracking, kept as a separate column so the two signals
+    // (portal vs. email) don't collide into one timestamp.
+    if (!submission.pdf_portal_downloaded_at) {
+      await admin
+        .from("nss_submissions")
+        .update({ pdf_portal_downloaded_at: new Date().toISOString() })
+        .eq("id", submissionId)
+        .is("pdf_portal_downloaded_at", null);
+    }
+
     const fileName = `${buildReportFileName(
       profile?.first_name,
       profile?.last_name,
