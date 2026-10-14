@@ -37,27 +37,28 @@ export async function GET(request: Request) {
 
   const profile = await getMyProfile(admin, submission.user_id).catch(() => null);
 
-  // First-touch only — a repeat click (recipient re-downloading later)
-  // shouldn't overwrite the original "they got it" timestamp, and the CRM
-  // push is nested in here so it only fires once too, not on every click.
+  // nss_submissions keeps first-touch only (when they first got it,
+  // unchanged below) — but the CRM gets notified on every download, not
+  // just the first, since a lead going back for the report again is the
+  // "still engaged" signal worth surfacing there.
+  const downloadedAt = new Date().toISOString();
   if (!submission.pdf_email_downloaded_at) {
-    const downloadedAt = new Date().toISOString();
     await admin
       .from("nss_submissions")
       .update({ pdf_email_downloaded_at: downloadedAt })
       .eq("id", submissionId)
       .is("pdf_email_downloaded_at", null);
+  }
 
-    if (submission.user_email) {
-      const firstName = profile?.first_name || (submission.respondent_name as string).split(" ")[0];
-      const lastName = profile?.last_name || "";
-      const email = submission.user_email as string;
-      after(() =>
-        notifyCrmLead({ firstName, lastName, email, reportEmailDownloadedAt: downloadedAt }).catch(
-          (crmError) => console.warn("[report-pdf-download] CRM notify failed:", crmError),
-        ),
-      );
-    }
+  if (submission.user_email) {
+    const firstName = profile?.first_name || (submission.respondent_name as string).split(" ")[0];
+    const lastName = profile?.last_name || "";
+    const email = submission.user_email as string;
+    after(() =>
+      notifyCrmLead({ firstName, lastName, email, reportEmailDownloadedAt: downloadedAt }).catch(
+        (crmError) => console.warn("[report-pdf-download] CRM notify failed:", crmError),
+      ),
+    );
   }
 
   const fileName = `${buildReportFileName(

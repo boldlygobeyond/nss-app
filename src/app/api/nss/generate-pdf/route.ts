@@ -52,32 +52,33 @@ export async function GET(request: Request) {
       );
     }
 
-    // First-touch only — matches the same pattern as the emailed link's
-    // own download tracking, kept as a separate column so the two signals
-    // (portal vs. email) don't collide into one timestamp. The CRM push is
-    // nested in here too, on purpose — it should only fire once, the same
-    // moment the local column is actually set, not on every repeat click.
+    // nss_submissions keeps first-touch only (kept as a separate column so
+    // the portal and email download signals don't collide into one
+    // timestamp, unchanged below) — but the CRM gets notified on every
+    // portal download, not just the first, since a lead going back for
+    // the report again is the "still engaged" signal worth surfacing
+    // there.
+    const downloadedAt = new Date().toISOString();
     if (!submission.pdf_portal_downloaded_at) {
-      const downloadedAt = new Date().toISOString();
       await admin
         .from("nss_submissions")
         .update({ pdf_portal_downloaded_at: downloadedAt })
         .eq("id", submissionId)
         .is("pdf_portal_downloaded_at", null);
+    }
 
-      if (submission.user_email) {
-        const firstName = profile?.first_name || submission.respondent_name.split(" ")[0];
-        const lastName = profile?.last_name || "";
-        const email = submission.user_email;
-        // after() so this survives past the response below instead of
-        // risking the function terminating mid-fetch on a bare
-        // fire-and-forget call.
-        after(() =>
-          notifyCrmLead({ firstName, lastName, email, reportPortalDownloadedAt: downloadedAt }).catch(
-            (crmError) => console.warn("[generate-pdf] CRM notify failed:", crmError),
-          ),
-        );
-      }
+    if (submission.user_email) {
+      const firstName = profile?.first_name || submission.respondent_name.split(" ")[0];
+      const lastName = profile?.last_name || "";
+      const email = submission.user_email;
+      // after() so this survives past the response below instead of
+      // risking the function terminating mid-fetch on a bare
+      // fire-and-forget call.
+      after(() =>
+        notifyCrmLead({ firstName, lastName, email, reportPortalDownloadedAt: downloadedAt }).catch(
+          (crmError) => console.warn("[generate-pdf] CRM notify failed:", crmError),
+        ),
+      );
     }
 
     const fileName = `${buildReportFileName(

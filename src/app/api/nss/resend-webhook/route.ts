@@ -58,23 +58,26 @@ export async function POST(request: Request) {
     .eq("id", submissionId)
     .maybeSingle();
 
-  // First-touch only, same as every other engagement signal — nothing to
-  // do if the submission is missing or this one was already touched.
-  const alreadyTouched = submission
-    ? eventType === "email.opened"
-      ? Boolean((submission as { email_opened_at?: string }).email_opened_at)
-      : Boolean((submission as { email_clicked_at?: string }).email_clicked_at)
-    : true;
-  if (!submission || alreadyTouched) {
+  if (!submission) {
     return NextResponse.json({ ok: true });
   }
 
+  // nss_submissions keeps first-touch only (when this was FIRST opened or
+  // clicked, unchanged below) — but the CRM gets notified on every event,
+  // not just the first, since a lead re-opening or re-clicking later is
+  // itself the "still engaged" signal worth surfacing there.
+  const alreadyTouched =
+    eventType === "email.opened"
+      ? Boolean((submission as { email_opened_at?: string }).email_opened_at)
+      : Boolean((submission as { email_clicked_at?: string }).email_clicked_at);
   const touchedAt = new Date().toISOString();
-  await admin
-    .from("nss_submissions")
-    .update(eventType === "email.opened" ? { email_opened_at: touchedAt } : { email_clicked_at: touchedAt })
-    .eq("id", submissionId)
-    .is(selectColumn, null);
+  if (!alreadyTouched) {
+    await admin
+      .from("nss_submissions")
+      .update(eventType === "email.opened" ? { email_opened_at: touchedAt } : { email_clicked_at: touchedAt })
+      .eq("id", submissionId)
+      .is(selectColumn, null);
+  }
 
   if (submission.user_email) {
     const profile = await getMyProfile(admin, submission.user_id).catch(() => null);
