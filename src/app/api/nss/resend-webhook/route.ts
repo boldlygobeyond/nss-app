@@ -25,12 +25,17 @@ export async function POST(request: Request) {
   };
 
   type ResendWebhookEvent = { type?: string; data?: { tags?: Record<string, string> } };
-  let event: ResendWebhookEvent;
+  // verify() only validates the signature (throws on failure) — this
+  // version of the svix package always returns undefined on success
+  // (it's called internally with jsonParse: false), so the payload has to
+  // be parsed separately after a successful verify, not taken from the
+  // return value.
   try {
-    event = new Webhook(secret).verify(payload, svixHeaders) as unknown as ResendWebhookEvent;
+    new Webhook(secret).verify(payload, svixHeaders);
   } catch {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
+  const event = JSON.parse(payload) as ResendWebhookEvent;
 
   const eventType = event.type;
   if (eventType !== "email.opened" && eventType !== "email.clicked") {
