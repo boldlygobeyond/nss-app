@@ -21,6 +21,8 @@ export interface NssSubmission {
   pdf_download_token: string | null;
   pdf_email_downloaded_at: string | null;
   pdf_portal_downloaded_at: string | null;
+  email_opened_at: string | null;
+  email_clicked_at: string | null;
   updated_at: string;
 }
 

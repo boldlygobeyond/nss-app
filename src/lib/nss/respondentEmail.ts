@@ -8,16 +8,19 @@
 // than an email-open pixel, which Apple Mail Privacy Protection and various
 // client image proxies fire regardless of whether a human looked.
 //
-// Resend's own open-tracking (toggled in the domain settings, no code
-// here) covers that looser "did it land" signal as a complement.
-//
+// Resend's own open/click tracking (toggled in the domain settings) covers
+// the looser "did it land / did they engage at all" signal as a complement
+// — pulled back into our own data via the resend-webhook route, tagged
+// here with the submission id so that webhook can correlate an event back
+// to a row without needing to look up or store Resend's own email id.
 export async function sendRespondentReportEmail(params: {
   to: string;
   firstName: string;
+  submissionId: string;
   downloadUrl: string;
   logoUrl: string;
 }): Promise<void> {
-  const { to, firstName, downloadUrl, logoUrl } = params;
+  const { to, firstName, submissionId, downloadUrl, logoUrl } = params;
 
   // Read at call time, not module load — a plain env var (not NEXT_PUBLIC_,
   // server-only) so the booking link can change without a redeploy, and so
@@ -128,6 +131,7 @@ export async function sendRespondentReportEmail(params: {
         to,
         subject: "Your Needs Signal Report is ready 🚀",
         html,
+        tags: [{ name: "submission_id", value: submissionId }],
       }),
     });
     if (!res.ok) {

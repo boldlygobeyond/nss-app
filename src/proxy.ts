@@ -11,6 +11,9 @@ const PUBLIC_PATH_PREFIXES = [
   // pdf_download_token in the URL is its own auth, checked inside the
   // route itself, not via Supabase session.
   "/api/nss/report-pdf-download",
+  // Resend's servers, not a logged-in user — authenticated via Svix
+  // signature verification inside the route itself.
+  "/api/nss/resend-webhook",
 ];
 
 export async function proxy(request: NextRequest) {
