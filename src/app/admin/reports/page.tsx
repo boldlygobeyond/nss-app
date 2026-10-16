@@ -13,6 +13,14 @@ function formatDate(ts: string) {
   return new Date(ts).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
+// v2 = the current 86-question Bradley-Terry bank (ids 51+); v1 = the
+// original 50-question win-rate bank. question_sequence only ever contains
+// ids from whichever bank was actually shown, so any id >= 51 is
+// conclusive — no other signal needed.
+function bankVersion(s: NssSubmission): "v1" | "v2" {
+  return s.question_sequence?.some((id) => id >= 51) ? "v2" : "v1";
+}
+
 export default function AllUserReportsPage() {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
@@ -91,7 +99,18 @@ export default function AllUserReportsPage() {
                           <FileText className="w-4 h-4 text-primary" />
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-foreground">Needs Signal Survey Report</p>
+                          <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                            Needs Signal Survey Report
+                            <span
+                              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                                bankVersion(s) === "v2"
+                                  ? "bg-primary/10 text-primary"
+                                  : "bg-secondary text-muted-foreground"
+                              }`}
+                            >
+                              {bankVersion(s)}
+                            </span>
+                          </p>
                           <p className="text-xs text-muted-foreground">{formatDate(s.updated_at)}</p>
                         </div>
                       </div>
