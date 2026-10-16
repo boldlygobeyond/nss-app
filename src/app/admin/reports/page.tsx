@@ -56,8 +56,12 @@ export default function AllUserReportsPage() {
       // happen days or weeks later. The timestamp of their last actual
       // answer is the real completion moment and nothing touches it
       // after the fact.
+      // .order("id") keeps .range() paging stable — without it, a
+      // concurrent write (e.g. someone mid-survey) can shift row order
+      // between page requests and cause a row to be double-fetched or
+      // dropped.
       const allResponses = await fetchAllRows<{ submission_id: string; answered_at: string }>((from, to) =>
-        supabase.from("nss_responses").select("submission_id, answered_at").range(from, to),
+        supabase.from("nss_responses").select("submission_id, answered_at").order("id").range(from, to),
       );
       const lastAnswered: Record<string, string> = {};
       allResponses.forEach((r) => {

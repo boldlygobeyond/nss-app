@@ -70,12 +70,18 @@ export default function QuestionStatsPage() {
       // presented — it grows one entry at a time as the real app shows
       // each question, so an in-progress submission's sequence is just as
       // trustworthy as a completed one's for "was this presented."
+      // .order("id") is required for .range() paging to be stable — without
+      // it Postgres doesn't guarantee the same row order across separate
+      // page requests, so a row can land in two pages (double-counted) or
+      // none (dropped) whenever the table gets a concurrent write between
+      // pages, which is exactly what happens while someone's mid-survey.
       const allSubmissions = await fetchAllRows<{ id: string; user_email: string | null; question_sequence: number[] | null }>(
         (from, to) =>
           supabase
             .from("nss_submissions")
             .select("id, user_email, question_sequence")
             .not("question_sequence", "is", null)
+            .order("id")
             .range(from, to),
       );
       // No email-domain exclusion — @test.com was only ever used to dodge
@@ -85,7 +91,11 @@ export default function QuestionStatsPage() {
 
       const responses = await fetchAllRows<{ submission_id: string; question_id: number; is_sharpened: boolean }>(
         (from, to) =>
-          supabase.from("nss_responses").select("submission_id, question_id, is_sharpened").range(from, to),
+          supabase
+            .from("nss_responses")
+            .select("submission_id, question_id, is_sharpened")
+            .order("id")
+            .range(from, to),
       );
 
       const presentedCount = new Map<number, number>();
@@ -140,9 +150,17 @@ export default function QuestionStatsPage() {
   );
 
   const sorted = useMemo(() => {
-    const withAttention = rows.map((r) => ({ ...r, attention: r.itDepends + r.skipped }));
+    // attention, itDepends, and skipped all sort by rate of presented, not
+    // raw count — a question presented once that got skipped once is 100%
+    // skipped, and should outrank one presented 50 times with 10 skips.
+    const rate = (n: number, presented: number) => (presented === 0 ? 0 : n / presented);
+    const withAttention = rows.map((r) => ({ ...r, attention: rate(r.itDepends + r.skipped, r.presented) }));
     const dir = sortDir === "asc" ? 1 : -1;
-    return [...withAttention].sort((a, b) => dir * (a[sortKey] - b[sortKey]));
+    const valueFor = (r: (typeof withAttention)[number]) => {
+      if (sortKey === "itDepends" || sortKey === "skipped") return rate(r[sortKey], r.presented);
+      return r[sortKey];
+    };
+    return [...withAttention].sort((a, b) => dir * (valueFor(a) - valueFor(b)));
   }, [rows, sortKey, sortDir]);
 
   const toggleSort = (key: SortKey) => {
