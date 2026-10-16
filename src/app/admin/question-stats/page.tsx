@@ -5,6 +5,7 @@ import { Loader2, ShieldAlert, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-re
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile } from "@/lib/nss/userProfiles";
 import { CLUSTER_LABELS, type ClusterKey } from "@/lib/nss/clusters";
+import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import GlobalHeader from "@/components/GlobalHeader";
 
 // Deliberately narrower than isNonLeadEmail (which also excludes
@@ -12,24 +13,6 @@ import GlobalHeader from "@/components/GlobalHeader";
 // standing @test.com throwaway domain should be excluded from these counts.
 function isTestEmail(email: string): boolean {
   return email.toLowerCase().trim().endsWith("@test.com");
-}
-
-// PostgREST caps an unpaginated select at 1000 rows — nss_responses alone
-// is already well past that (1569 rows and climbing), so a plain .select()
-// here silently drops real answers rather than erroring, corrupting every
-// count downstream. Page through with .range() until a page comes back
-// short of the page size. Takes a thunk (not a built query) since each
-// page needs its own fresh .range() call on the same base query shape.
-async function fetchAllRows<T>(pageFrom: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
-  const pageSize = 1000;
-  const rows: T[] = [];
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await pageFrom(from, from + pageSize - 1);
-    if (error) throw error;
-    rows.push(...(data ?? []));
-    if (!data || data.length < pageSize) break;
-  }
-  return rows;
 }
 
 // Flagged purely for this page's own context, not the delivery logic —

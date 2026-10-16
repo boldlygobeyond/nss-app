@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, listAllProfiles, type UserProfile } from "@/lib/nss/userProfiles";
 import { listAllSubmissions, type NssSubmission } from "@/lib/nss/api";
 import { buildFullName } from "@/lib/nss/reportFilename";
+import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import GlobalHeader from "@/components/GlobalHeader";
 
 function formatDate(ts: string) {
@@ -26,6 +27,7 @@ export default function AllUserReportsPage() {
   const [authorized, setAuthorized] = useState(false);
   const [submissions, setSubmissions] = useState<NssSubmission[]>([]);
   const [profiles, setProfiles] = useState<Record<string, UserProfile>>({});
+  const [completedAt, setCompletedAt] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const load = async () => {
@@ -45,6 +47,24 @@ export default function AllUserReportsPage() {
       const [rows, allProfiles] = await Promise.all([listAllSubmissions(supabase), listAllProfiles(supabase)]);
       setSubmissions(rows);
       setProfiles(Object.fromEntries(allProfiles.map((p) => [p.id, p])));
+
+      // updated_at isn't trustworthy as "when they finished" — a DB
+      // trigger bumps it on every write to the row, including PDF
+      // caching, Drive archival, and download-link clicks that can
+      // happen days or weeks later. The timestamp of their last actual
+      // answer is the real completion moment and nothing touches it
+      // after the fact.
+      const allResponses = await fetchAllRows<{ submission_id: string; answered_at: string }>((from, to) =>
+        supabase.from("nss_responses").select("submission_id, answered_at").range(from, to),
+      );
+      const lastAnswered: Record<string, string> = {};
+      allResponses.forEach((r) => {
+        if (!lastAnswered[r.submission_id] || r.answered_at > lastAnswered[r.submission_id]) {
+          lastAnswered[r.submission_id] = r.answered_at;
+        }
+      });
+      setCompletedAt(lastAnswered);
+
       setLoading(false);
     };
     load();
@@ -111,7 +131,7 @@ export default function AllUserReportsPage() {
                               {bankVersion(s)}
                             </span>
                           </p>
-                          <p className="text-xs text-muted-foreground">{formatDate(s.updated_at)}</p>
+                          <p className="text-xs text-muted-foreground">{formatDate(completedAt[s.id] ?? s.updated_at)}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
