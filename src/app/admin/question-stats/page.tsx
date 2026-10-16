@@ -5,7 +5,26 @@ import { Loader2, ShieldAlert, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-re
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile } from "@/lib/nss/userProfiles";
 import { CLUSTER_LABELS, type ClusterKey } from "@/lib/nss/clusters";
+import { isNonLeadEmail } from "@/lib/nss/crm";
 import GlobalHeader from "@/components/GlobalHeader";
+
+// PostgREST caps an unpaginated select at 1000 rows — nss_responses alone
+// is already well past that (1569 rows and climbing), so a plain .select()
+// here silently drops real answers rather than erroring, corrupting every
+// count downstream. Page through with .range() until a page comes back
+// short of the page size. Takes a thunk (not a built query) since each
+// page needs its own fresh .range() call on the same base query shape.
+async function fetchAllRows<T>(pageFrom: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
+  const pageSize = 1000;
+  const rows: T[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await pageFrom(from, from + pageSize - 1);
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if (!data || data.length < pageSize) break;
+  }
+  return rows;
+}
 
 // Flagged purely for this page's own context, not the delivery logic —
 // these two pairs were last-resort-only until 2026-10-16, when that
@@ -60,29 +79,47 @@ export default function QuestionStatsPage() {
       }
       setAuthorized(true);
 
-      const [{ data: questions }, { data: submissions }, { data: responses }] = await Promise.all([
-        supabase
-          .from("nss_questions")
-          .select("id, cluster_a, cluster_b, standard_question")
-          .gte("id", 51),
-        // question_sequence only ever contains ids that were genuinely
-        // presented — it grows one entry at a time as the real app shows
-        // each question, so an in-progress submission's sequence is just
-        // as trustworthy as a completed one's for "was this presented."
-        supabase.from("nss_submissions").select("question_sequence").not("question_sequence", "is", null),
-        supabase.from("nss_responses").select("question_id, is_sharpened"),
-      ]);
+      const { data: questions } = await supabase
+        .from("nss_questions")
+        .select("id, cluster_a, cluster_b, standard_question")
+        .gte("id", 51);
+
+      // question_sequence only ever contains ids that were genuinely
+      // presented — it grows one entry at a time as the real app shows
+      // each question, so an in-progress submission's sequence is just as
+      // trustworthy as a completed one's for "was this presented."
+      const allSubmissions = await fetchAllRows<{ id: string; user_email: string | null; question_sequence: number[] | null }>(
+        (from, to) =>
+          supabase
+            .from("nss_submissions")
+            .select("id, user_email, question_sequence")
+            .not("question_sequence", "is", null)
+            .range(from, to),
+      );
+      // Test accounts and internal dogfooding submissions aren't real
+      // respondent signal — same exclusion used everywhere else in this
+      // app (CRM sync, admin/respondent email), via isNonLeadEmail.
+      const submissions = allSubmissions.filter((s) => !isNonLeadEmail(s.user_email ?? ""));
+      const excludedSubmissionIds = new Set(
+        allSubmissions.filter((s) => isNonLeadEmail(s.user_email ?? "")).map((s) => s.id),
+      );
+
+      const allResponses = await fetchAllRows<{ submission_id: string; question_id: number; is_sharpened: boolean }>(
+        (from, to) =>
+          supabase.from("nss_responses").select("submission_id, question_id, is_sharpened").range(from, to),
+      );
+      const responses = allResponses.filter((r) => !excludedSubmissionIds.has(r.submission_id));
 
       const presentedCount = new Map<number, number>();
-      (submissions ?? []).forEach((s) => {
-        (s.question_sequence as number[] | null)?.forEach((qid) => {
+      submissions.forEach((s) => {
+        (s.question_sequence ?? []).forEach((qid) => {
           presentedCount.set(qid, (presentedCount.get(qid) ?? 0) + 1);
         });
       });
 
       const answeredCount = new Map<number, number>();
       const itDependsCount = new Map<number, number>();
-      (responses ?? []).forEach((r) => {
+      responses.forEach((r) => {
         answeredCount.set(r.question_id, (answeredCount.get(r.question_id) ?? 0) + 1);
         if (r.is_sharpened) itDependsCount.set(r.question_id, (itDependsCount.get(r.question_id) ?? 0) + 1);
       });
