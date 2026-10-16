@@ -72,7 +72,10 @@ export default function AllUserReportsPage() {
     load();
   }, []);
 
-  const groups = useMemo(() => {
+  // Array, not an object — needs an explicit sort order (newest completion
+  // first), both for which person's group leads and for that person's own
+  // reports within it, rather than relying on insertion/key order.
+  const groupList = useMemo(() => {
     const q = search.trim().toLowerCase();
     const bySubmission = submissions.filter((s) => {
       if (versionFilter !== "all" && bankVersion(s) !== versionFilter) return false;
@@ -82,12 +85,16 @@ export default function AllUserReportsPage() {
       const haystack = `${fullName} ${s.user_email ?? ""}`.toLowerCase();
       return haystack.includes(q);
     });
-    return bySubmission.reduce<Record<string, NssSubmission[]>>((acc, s) => {
+    const byKey = bySubmission.reduce<Record<string, NssSubmission[]>>((acc, s) => {
       const key = s.user_email ?? s.respondent_name;
       (acc[key] ??= []).push(s);
       return acc;
     }, {});
-  }, [submissions, profiles, search, versionFilter]);
+    const completedOf = (s: NssSubmission) => completedAt[s.id] ?? s.updated_at;
+    return Object.entries(byKey)
+      .map(([key, records]) => [key, [...records].sort((a, b) => (completedOf(b) > completedOf(a) ? 1 : -1))] as const)
+      .sort(([, a], [, b]) => (completedOf(b[0]) > completedOf(a[0]) ? 1 : -1));
+  }, [submissions, profiles, search, versionFilter, completedAt]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -138,14 +145,14 @@ export default function AllUserReportsPage() {
               </div>
             </div>
 
-            {Object.keys(groups).length === 0 ? (
+            {groupList.length === 0 ? (
               <div className="bg-card border border-border/50 rounded-2xl p-10 text-center">
                 <Search className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-40" />
                 <p className="text-muted-foreground text-sm">No reports match your search or filter.</p>
               </div>
             ) : (
           <div className="space-y-8">
-            {Object.entries(groups).map(([email, records]) => {
+            {groupList.map(([email, records]) => {
               const profile = profiles[records[0].user_id];
               const fullName = buildFullName(profile?.first_name, profile?.last_name, records[0].respondent_name);
               return (
