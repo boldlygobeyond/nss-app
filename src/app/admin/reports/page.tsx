@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { FileText, Loader2, ShieldAlert, Users } from "lucide-react";
+import { BarChart3, FileText, Loader2, ShieldAlert, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, listAllProfiles, type UserProfile } from "@/lib/nss/userProfiles";
 import { listAllSubmissions, type NssSubmission } from "@/lib/nss/api";
@@ -96,9 +96,9 @@ export default function AllUserReportsPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <Link href={`/survey/report/${s.id}`} target="_blank" rel="noopener noreferrer">
-                          <button className="text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors">
-                            Preview Interstitial
+                        <Link href={`/admin/reports/${s.id}/insights`}>
+                          <button className="text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors inline-flex items-center gap-1.5">
+                            <BarChart3 className="w-3 h-3" /> Insights
                           </button>
                         </Link>
                         <Link href={`/reports/${s.id}`}>
