@@ -5,8 +5,14 @@ import { Loader2, ShieldAlert, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-re
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile } from "@/lib/nss/userProfiles";
 import { CLUSTER_LABELS, type ClusterKey } from "@/lib/nss/clusters";
-import { isNonLeadEmail } from "@/lib/nss/crm";
 import GlobalHeader from "@/components/GlobalHeader";
+
+// Deliberately narrower than isNonLeadEmail (which also excludes
+// @boldlygobeyond.com) — employees do take the real survey, so only the
+// standing @test.com throwaway domain should be excluded from these counts.
+function isTestEmail(email: string): boolean {
+  return email.toLowerCase().trim().endsWith("@test.com");
+}
 
 // PostgREST caps an unpaginated select at 1000 rows — nss_responses alone
 // is already well past that (1569 rows and climbing), so a plain .select()
@@ -96,12 +102,12 @@ export default function QuestionStatsPage() {
             .not("question_sequence", "is", null)
             .range(from, to),
       );
-      // Test accounts and internal dogfooding submissions aren't real
-      // respondent signal — same exclusion used everywhere else in this
-      // app (CRM sync, admin/respondent email), via isNonLeadEmail.
-      const submissions = allSubmissions.filter((s) => !isNonLeadEmail(s.user_email ?? ""));
+      // @test.com is the standing throwaway test domain — excluded.
+      // @boldlygobeyond.com stays in: employees take the real survey, not
+      // just dogfooding it, so their answers are real signal here.
+      const submissions = allSubmissions.filter((s) => !isTestEmail(s.user_email ?? ""));
       const excludedSubmissionIds = new Set(
-        allSubmissions.filter((s) => isNonLeadEmail(s.user_email ?? "")).map((s) => s.id),
+        allSubmissions.filter((s) => isTestEmail(s.user_email ?? "")).map((s) => s.id),
       );
 
       const allResponses = await fetchAllRows<{ submission_id: string; question_id: number; is_sharpened: boolean }>(
