@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { BarChart3, FileText, Loader2, ShieldAlert, Users } from "lucide-react";
+import { BarChart3, FileText, Loader2, Search, ShieldAlert, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, listAllProfiles, type UserProfile } from "@/lib/nss/userProfiles";
 import { listAllSubmissions, type NssSubmission } from "@/lib/nss/api";
@@ -28,6 +28,8 @@ export default function AllUserReportsPage() {
   const [submissions, setSubmissions] = useState<NssSubmission[]>([]);
   const [profiles, setProfiles] = useState<Record<string, UserProfile>>({});
   const [completedAt, setCompletedAt] = useState<Record<string, string>>({});
+  const [search, setSearch] = useState("");
+  const [versionFilter, setVersionFilter] = useState<"all" | "v1" | "v2">("all");
 
   useEffect(() => {
     const load = async () => {
@@ -70,11 +72,22 @@ export default function AllUserReportsPage() {
     load();
   }, []);
 
-  const groups = submissions.reduce<Record<string, NssSubmission[]>>((acc, s) => {
-    const key = s.user_email ?? s.respondent_name;
-    (acc[key] ??= []).push(s);
-    return acc;
-  }, {});
+  const groups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const bySubmission = submissions.filter((s) => {
+      if (versionFilter !== "all" && bankVersion(s) !== versionFilter) return false;
+      if (!q) return true;
+      const profile = profiles[s.user_id];
+      const fullName = buildFullName(profile?.first_name, profile?.last_name, s.respondent_name);
+      const haystack = `${fullName} ${s.user_email ?? ""}`.toLowerCase();
+      return haystack.includes(q);
+    });
+    return bySubmission.reduce<Record<string, NssSubmission[]>>((acc, s) => {
+      const key = s.user_email ?? s.respondent_name;
+      (acc[key] ??= []).push(s);
+      return acc;
+    }, {});
+  }, [submissions, profiles, search, versionFilter]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -98,6 +111,39 @@ export default function AllUserReportsPage() {
             <p className="text-muted-foreground text-sm">No reports have been generated yet.</p>
           </div>
         ) : (
+          <>
+            <div className="flex items-center gap-3 mb-6 flex-wrap">
+              <div className="relative flex-1 min-w-[220px]">
+                <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by name or email..."
+                  className="w-full bg-card border border-border/50 rounded-lg pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
+                />
+              </div>
+              <div className="flex items-center gap-1 bg-card border border-border/50 rounded-lg p-1">
+                {(["all", "v1", "v2"] as const).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setVersionFilter(v)}
+                    className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+                      versionFilter === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"
+                    }`}
+                  >
+                    {v === "all" ? "All versions" : v}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {Object.keys(groups).length === 0 ? (
+              <div className="bg-card border border-border/50 rounded-2xl p-10 text-center">
+                <Search className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+                <p className="text-muted-foreground text-sm">No reports match your search or filter.</p>
+              </div>
+            ) : (
           <div className="space-y-8">
             {Object.entries(groups).map(([email, records]) => {
               const profile = profiles[records[0].user_id];
@@ -153,6 +199,8 @@ export default function AllUserReportsPage() {
               );
             })}
           </div>
+            )}
+          </>
         )}
       </div>
     </div>
