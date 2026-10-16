@@ -37,26 +37,19 @@
  * clusters of data (confirmed by simulation before this was wired in for
  * real). Capped at 2 consecutive asks of the same pair.
  *
- * Belonging-vs-Stability and Belonging-vs-Connections are last-resort only
- * (Oct 2026 decision): even with authentically-written questions, these two
- * pairings are weaker/less legitimate-feeling than the rest of the bank, so
- * they're excluded from normal selection and only drawn from once every
- * other available pair has been exhausted.
+ * Belonging-vs-Stability and Belonging-vs-Connections were previously
+ * last-resort only (Oct 2026 decision, reversed later that same month):
+ * they were judged weaker/less legitimate-feeling than the rest of the
+ * bank, so they were excluded from normal selection. Reversed to see how
+ * real respondents react to the actual questions rather than deciding on
+ * the team's own read of them — they're now ordinary pairs, selected by
+ * the same three tiers as everything else.
  */
 
 import { CLUSTERS, type ClusterKey } from "./clusters";
 import type { SurveyQuestion } from "./questions";
 import { fitBradleyTerry, type BtResponse } from "./bradleyTerry";
 import { shuffleArray } from "./surveyEngine";
-
-const TIE_BREAK_ONLY_PAIRS: Array<[ClusterKey, ClusterKey]> = [
-  ["Belonging", "Stability"],
-  ["Belonging", "Connections"],
-];
-
-export function isTieBreakOnlyPair(a: ClusterKey, b: ClusterKey): boolean {
-  return TIE_BREAK_ONLY_PAIRS.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
-}
 
 function pairKey(a: ClusterKey, b: ClusterKey): string {
   return [a, b].sort().join("|");
@@ -174,11 +167,10 @@ function applyClusterCooldown(
 /**
  * Which rule actually supplied the chosen question — returned alongside the
  * pick so a submission's real path can be audited after the fact (was the
- * staleness guard doing its job, was a validation request honored promptly,
- * did a tie-break-only pair only ever fire as a genuine last resort) without
- * having to re-derive it by eye from raw response rows.
+ * staleness guard doing its job, was a validation request honored promptly)
+ * without having to re-derive it by eye from raw response rows.
  */
-export type SelectionTier = "staleness" | "validation" | "default" | "guard-relaxed" | "tie-break-last-resort";
+export type SelectionTier = "staleness" | "validation" | "default" | "guard-relaxed";
 
 export function selectNextBtQuestion(
   questions: SurveyQuestion[],
@@ -187,12 +179,8 @@ export function selectNextBtQuestion(
   state: DeliveryState,
   questionIndex: number,
 ): { question: SurveyQuestion; nextState: DeliveryState; tier: SelectionTier } | null {
-  const available = questions.filter((q) => !usedIds.has(q.id));
-  if (available.length === 0) return null;
-
-  const normalPool = available.filter((q) => !isTieBreakOnlyPair(q.mappedClusters[0], q.mappedClusters[1]));
-  const usingTieBreakPool = normalPool.length === 0;
-  const pool = usingTieBreakPool ? available : normalPool;
+  const pool = questions.filter((q) => !usedIds.has(q.id));
+  if (pool.length === 0) return null;
 
   const strengths = fitBradleyTerry(responses);
   const strengthOf = Object.fromEntries(CLUSTERS.map((c, i) => [c, strengths[i]])) as Record<ClusterKey, number>;
@@ -289,7 +277,7 @@ export function selectNextBtQuestion(
     pendingValidation: state.pendingValidation,
   };
 
-  return { question, nextState, tier: usingTieBreakPool ? "tie-break-last-resort" : tier };
+  return { question, nextState, tier };
 }
 
 /**

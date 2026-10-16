@@ -2,7 +2,7 @@
  * Audits a real respondent's path through the adaptive survey: for every
  * post-calibration question, which selection tier actually produced it
  * (staleness guard / validation re-test / default closest-gap / a relaxed
- * guard / last-resort tie-break pair), cross-checked against what the
+ * guard), cross-checked against what the
  * *current* delivery code on disk would pick given the same real history —
  * so you can tell a genuine behavior change from "this run used an older
  * version of the logic." It also replays the Bradley-Terry ranking and
@@ -142,7 +142,6 @@ async function main() {
     validation: 0,
     default: 0,
     "guard-relaxed": 0,
-    "tie-break-last-resort": 0,
   };
   let mismatches = 0;
 
