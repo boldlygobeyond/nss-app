@@ -8,13 +8,6 @@ import { CLUSTER_LABELS, type ClusterKey } from "@/lib/nss/clusters";
 import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import GlobalHeader from "@/components/GlobalHeader";
 
-// Deliberately narrower than isNonLeadEmail (which also excludes
-// @boldlygobeyond.com) — employees do take the real survey, so only the
-// standing @test.com throwaway domain should be excluded from these counts.
-function isTestEmail(email: string): boolean {
-  return email.toLowerCase().trim().endsWith("@test.com");
-}
-
 // Flagged purely for this page's own context, not the delivery logic —
 // these two pairs were last-resort-only until 2026-10-16, when that
 // policy was removed specifically to see how real respondents react to
@@ -85,19 +78,15 @@ export default function QuestionStatsPage() {
             .not("question_sequence", "is", null)
             .range(from, to),
       );
-      // @test.com is the standing throwaway test domain — excluded.
-      // @boldlygobeyond.com stays in: employees take the real survey, not
-      // just dogfooding it, so their answers are real signal here.
-      const submissions = allSubmissions.filter((s) => !isTestEmail(s.user_email ?? ""));
-      const excludedSubmissionIds = new Set(
-        allSubmissions.filter((s) => isTestEmail(s.user_email ?? "")).map((s) => s.id),
-      );
+      // No email-domain exclusion — @test.com was only ever used to dodge
+      // CRM/admin-email side effects, not to mark junk data. These are
+      // real respondents taking the real survey, same as everyone else.
+      const submissions = allSubmissions;
 
-      const allResponses = await fetchAllRows<{ submission_id: string; question_id: number; is_sharpened: boolean }>(
+      const responses = await fetchAllRows<{ submission_id: string; question_id: number; is_sharpened: boolean }>(
         (from, to) =>
           supabase.from("nss_responses").select("submission_id, question_id, is_sharpened").range(from, to),
       );
-      const responses = allResponses.filter((r) => !excludedSubmissionIds.has(r.submission_id));
 
       const presentedCount = new Map<number, number>();
       submissions.forEach((s) => {
