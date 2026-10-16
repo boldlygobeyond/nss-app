@@ -41,6 +41,10 @@ export interface TrajectoryPoint {
 export interface InsightsData {
   respondentName: string;
   userEmail: string | null;
+  // Whether this submission used the current 86-question Bradley-Terry
+  // bank (true) or the original 50-question win-rate bank (false) — the
+  // UI uses this to decide whether tier labels are meaningful to show.
+  usesNewBank: boolean;
   totalQuestions: number;
   skippedCount: number;
   itDependsCount: number;
@@ -83,6 +87,14 @@ export async function computeInsightsData(
   const fullSequence = submission.question_sequence as number[];
   const responseByQid = new Map(responses.map((r) => [r.question_id, r]));
   const calibrationIds = fullSequence.slice(0, 21);
+  // v1 (the original 50-question bank) used a completely different
+  // selection mechanism (surveyEngine.ts's selectAdaptiveBlock — win-rate
+  // blocks of 7, not one-at-a-time Bradley-Terry tiers). Replaying
+  // selectNextBtQuestion against v1 history would produce a tier label
+  // that looks plausible but never actually happened — so v1 submissions
+  // skip the replay entirely and their adaptive-phase questions carry no
+  // tier at all, rather than a fabricated one.
+  const usesNewBank = fullSequence.some((id) => id >= 51);
 
   const journey: JourneyEntry[] = [];
 
@@ -106,48 +118,69 @@ export async function computeInsightsData(
 
   const calibrationResponses = responses.filter((r) => calibrationIds.includes(r.question_id));
   const adaptiveResponses = responses.filter((r) => !calibrationIds.includes(r.question_id));
-  let state: DeliveryState = seedDeliveryStateFromHistory(
-    calibrationResponses.map((r) => ({
-      mappedClusters: qMap[r.question_id].mappedClusters,
-      isSharpened: r.is_sharpened as boolean,
-    })),
-  );
-  const calibrationCount = calibrationResponses.length;
-  for (let j = 0; j < adaptiveResponses.length; j++) {
-    const i = calibrationCount + j;
-    const btResponsesSoFar: BtResponse[] = [...calibrationResponses, ...adaptiveResponses.slice(0, j)].map((r) => ({
-      chosen_clusters: r.chosen_clusters,
-      rejected_clusters: r.rejected_clusters,
-    }));
-    const seqPos = fullSequence.indexOf(adaptiveResponses[j].question_id);
-    const usedIds = new Set(fullSequence.slice(0, seqPos));
-    const replay = selectNextBtQuestion(questions, btResponsesSoFar, usedIds, state, i);
-    const actual = adaptiveResponses[j];
-    const actualQ = qMap[actual.question_id];
-    if (!actualQ) continue;
-    journey.push({
-      position: 21 + j + 1,
-      phase: "adaptive",
-      questionId: actual.question_id,
-      pair: `${actualQ.mappedClusters[0]} vs ${actualQ.mappedClusters[1]}`,
-      status: actual.is_sharpened ? "it_depends_then_answered" : "answered",
-      selection: actual.selection as "A" | "B",
-      chosenCluster: actual.selection === "A" ? actualQ.mappedClusters[0] : actualQ.mappedClusters[1],
-      rejectedCluster: actual.selection === "A" ? actualQ.mappedClusters[1] : actualQ.mappedClusters[0],
-      tier: replay?.tier,
-      text: textFor(actualQ, actual.is_sharpened as boolean),
-    });
-    const [a, b] = actualQ.mappedClusters;
-    state = applyAnswerOutcome(
-      {
-        ...state,
-        recentPairKeys: [...state.recentPairKeys, [a, b].sort().join("|")].slice(-10),
-        recentQuestionClusters: [...state.recentQuestionClusters, [a, b] as [ClusterKey, ClusterKey]].slice(-10),
-        lastSeenAt: { ...state.lastSeenAt, [a]: i, [b]: i },
-      },
-      actualQ.mappedClusters,
-      actual.is_sharpened as boolean,
+
+  if (usesNewBank) {
+    let state: DeliveryState = seedDeliveryStateFromHistory(
+      calibrationResponses.map((r) => ({
+        mappedClusters: qMap[r.question_id].mappedClusters,
+        isSharpened: r.is_sharpened as boolean,
+      })),
     );
+    const calibrationCount = calibrationResponses.length;
+    for (let j = 0; j < adaptiveResponses.length; j++) {
+      const i = calibrationCount + j;
+      const btResponsesSoFar: BtResponse[] = [...calibrationResponses, ...adaptiveResponses.slice(0, j)].map((r) => ({
+        chosen_clusters: r.chosen_clusters,
+        rejected_clusters: r.rejected_clusters,
+      }));
+      const seqPos = fullSequence.indexOf(adaptiveResponses[j].question_id);
+      const usedIds = new Set(fullSequence.slice(0, seqPos));
+      const replay = selectNextBtQuestion(questions, btResponsesSoFar, usedIds, state, i);
+      const actual = adaptiveResponses[j];
+      const actualQ = qMap[actual.question_id];
+      if (!actualQ) continue;
+      journey.push({
+        position: 21 + j + 1,
+        phase: "adaptive",
+        questionId: actual.question_id,
+        pair: `${actualQ.mappedClusters[0]} vs ${actualQ.mappedClusters[1]}`,
+        status: actual.is_sharpened ? "it_depends_then_answered" : "answered",
+        selection: actual.selection as "A" | "B",
+        chosenCluster: actual.selection === "A" ? actualQ.mappedClusters[0] : actualQ.mappedClusters[1],
+        rejectedCluster: actual.selection === "A" ? actualQ.mappedClusters[1] : actualQ.mappedClusters[0],
+        tier: replay?.tier,
+        text: textFor(actualQ, actual.is_sharpened as boolean),
+      });
+      const [a, b] = actualQ.mappedClusters;
+      state = applyAnswerOutcome(
+        {
+          ...state,
+          recentPairKeys: [...state.recentPairKeys, [a, b].sort().join("|")].slice(-10),
+          recentQuestionClusters: [...state.recentQuestionClusters, [a, b] as [ClusterKey, ClusterKey]].slice(-10),
+          lastSeenAt: { ...state.lastSeenAt, [a]: i, [b]: i },
+        },
+        actualQ.mappedClusters,
+        actual.is_sharpened as boolean,
+      );
+    }
+  } else {
+    // v1 — no tier replay, just the real recorded answer for each
+    // adaptive-phase question in order.
+    adaptiveResponses.forEach((actual, j) => {
+      const actualQ = qMap[actual.question_id];
+      if (!actualQ) return;
+      journey.push({
+        position: 21 + j + 1,
+        phase: "adaptive",
+        questionId: actual.question_id,
+        pair: `${actualQ.mappedClusters[0]} vs ${actualQ.mappedClusters[1]}`,
+        status: actual.is_sharpened ? "it_depends_then_answered" : "answered",
+        selection: actual.selection as "A" | "B",
+        chosenCluster: actual.selection === "A" ? actualQ.mappedClusters[0] : actualQ.mappedClusters[1],
+        rejectedCluster: actual.selection === "A" ? actualQ.mappedClusters[1] : actualQ.mappedClusters[0],
+        text: textFor(actualQ, actual.is_sharpened as boolean),
+      });
+    });
   }
 
   journey.forEach((entry) => {
@@ -187,6 +220,7 @@ export async function computeInsightsData(
   return {
     respondentName: submission.respondent_name,
     userEmail: submission.user_email,
+    usesNewBank,
     totalQuestions: responses.length,
     skippedCount: journey.filter((j) => j.status === "skipped").length,
     itDependsCount: journey.filter((j) => j.status === "it_depends_then_answered").length,

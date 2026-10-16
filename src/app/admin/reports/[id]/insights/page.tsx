@@ -261,7 +261,7 @@ export default function InsightsPage({ params }: { params: Promise<{ id: string 
               ))}
             </div>
             <p className="text-[11px] font-semibold tracking-wide uppercase text-muted-foreground mb-2">
-              Adaptive — picked live by the delivery logic
+              Adaptive {data.usesNewBank ? "— picked live by the delivery logic" : "— v1 win-rate selection"}
             </p>
             <div className="flex flex-wrap gap-1 mb-4">
               {adaptiveCells.map((entry) => (
@@ -276,20 +276,27 @@ export default function InsightsPage({ params }: { params: Promise<{ id: string 
                 />
               ))}
             </div>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap pt-3 border-t border-border/50">
-              <span className="inline-flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-sm shadow-[inset_0_-2.5px_0_0_#ef4444] border border-border" />{" "}
-                staleness tier
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-sm shadow-[inset_0_-2.5px_0_0_#f59e0b] border border-border" />{" "}
-                validation tier
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-sm shadow-[inset_0_-2.5px_0_0_theme(colors.primary.DEFAULT)] border border-border" />{" "}
-                default tier
-              </span>
-            </div>
+            {data.usesNewBank ? (
+              <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap pt-3 border-t border-border/50">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm shadow-[inset_0_-2.5px_0_0_#ef4444] border border-border" />{" "}
+                  staleness tier
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm shadow-[inset_0_-2.5px_0_0_#f59e0b] border border-border" />{" "}
+                  validation tier
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm shadow-[inset_0_-2.5px_0_0_theme(colors.primary.DEFAULT)] border border-border" />{" "}
+                  default tier
+                </span>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground pt-3 border-t border-border/50">
+                This respondent took the original 50-question bank, which picked questions in blocks of 7 by
+                win-rate rather than one at a time — so there&apos;s no per-question tier to show here.
+              </p>
+            )}
           </div>
         </section>
 
