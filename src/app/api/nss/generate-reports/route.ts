@@ -12,7 +12,7 @@ import { randomBytes } from "node:crypto";
 import { renderReportPdf } from "@/lib/nss/pdfRender";
 import { cacheReportPdf } from "@/lib/nss/pdfStorage";
 import { computePairwiseMatchups, type TopNeed } from "@/lib/nss/surveyEngine";
-import { rankByBradleyTerry } from "@/lib/nss/bradleyTerry";
+import { rankByBradleyTerry, top3Stability } from "@/lib/nss/bradleyTerry";
 import type { ReportData } from "@/lib/nss/reportTypes";
 
 // Hobby-plan ceiling without Fluid Compute is 60s — this route does a
@@ -86,13 +86,20 @@ export async function POST(request: Request) {
     if (responsesError) throw responsesError;
 
     const matchups = computePairwiseMatchups(responses ?? []);
+    // "Top 3" is a hard cutoff over a continuous ranking — #4 can be a
+    // near-tie with #3. This resamples the person's own real answers to
+    // find out, so the prompt can tell the model to say so when true
+    // instead of presenting a toss-up as a clear result.
+    const btRanked = rankByBradleyTerry(responses ?? []);
+    const stability = top3Stability(responses ?? []);
+    const rankStability = { stability: stability.stability, fourthCluster: btRanked[3]?.cluster ?? null };
 
     const prompt = useBradleyTerry
       ? buildReportPromptV2({
           firstName,
           respondentName: submission.respondent_name as string,
           pronouns: (submission.pronouns as string) || "they/them",
-          btRanked: rankByBradleyTerry(responses ?? []),
+          btRanked,
           matchups,
           responses: responses ?? [],
         })
@@ -102,6 +109,7 @@ export async function POST(request: Request) {
           pronouns: (submission.pronouns as string) || "they/them",
           topNeeds,
           matchups,
+          rankStability,
         });
 
     const response = await anthropic.messages.create({

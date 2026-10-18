@@ -29,14 +29,35 @@ function matchupSummary(matchups: PairwiseMatchup[], topClusters: Set<string>): 
     .join("\n");
 }
 
+// "Top 3" is an arbitrary line drawn across a continuous ranking — nothing
+// stops the #4 cluster from being a near-exact tie with #3. Resampling the
+// person's own answers (same bootstrap as bradleyTerry.ts's top3Stability)
+// tells us when that's actually the case, so the report can say so instead
+// of presenting a coin flip as a clear result.
+function rankStabilityNote(
+  rankStability: { stability: number; fourthCluster: ClusterKey | null } | undefined,
+  top3Labels: string[],
+): string {
+  if (!rankStability || !rankStability.fourthCluster) return "";
+  const { stability, fourthCluster } = rankStability;
+  const pct = Math.round(stability * 100);
+  if (stability >= 0.6) {
+    return `\n\nRank stability — INTERNAL ONLY, never mention this percentage or the word "stability" in your output: resampling this person's actual answers reproduces this exact top 3 set ${pct}% of the time. That is a clear, stable result, no need to hedge on the #3 ranking.`;
+  }
+  const fourthLabel = CLUSTER_LABELS[fourthCluster];
+  const thirdLabel = top3Labels[2];
+  return `\n\nRank stability — INTERNAL ONLY, never mention this percentage, the word "stability", or any number in your output: resampling this person's actual answers reproduces this exact top 3 set only ${pct}% of the time. The #3 need (${thirdLabel}) and the next-ranked need (${fourthLabel}) are close enough to be a toss-up. Acknowledge this in plain language, rather than implying ${thirdLabel} is clearly and decisively ahead of ${fourthLabel}. CRITICAL — this acknowledgment must be woven INTO the keyPattern's existing 2 sentences, or INTO the body of one of the exactly-3 choiceInsights below, replacing or blending with what would already go there. It must NOT become a 4th choiceInsight, a 4th anything, or any new field anywhere in the JSON. Every array below keeps the exact count its own instructions already specify, no exceptions for this.`;
+}
+
 export function buildReportPrompt(params: {
   firstName: string;
   respondentName: string;
   pronouns: string;
   topNeeds: TopNeed[];
   matchups: PairwiseMatchup[];
+  rankStability?: { stability: number; fourthCluster: ClusterKey | null };
 }): string {
-  const { firstName, pronouns, topNeeds, matchups } = params;
+  const { firstName, pronouns, topNeeds, matchups, rankStability } = params;
   const top3 = topNeeds.slice(0, 3);
   const top3Labels = top3.map((n) => CLUSTER_LABELS[n.cluster]);
   const allRanked = rankedList(topNeeds);
@@ -44,6 +65,7 @@ export function buildReportPrompt(params: {
     matchups,
     new Set(top3.map((n) => n.cluster)),
   );
+  const stabilityNote = rankStabilityNote(rankStability, top3Labels);
 
   const pronoun = pronouns || "they/them";
   // Check "she" before "he" — "she/her" contains the substring "he", so
@@ -65,22 +87,23 @@ VOICE & TONE RULES — CRITICAL:
 - Never use quotation marks around reflection questions.
 - CLUSTER RULE — CRITICAL: Speak to clusters as whole orientations. Never invent or reference individual sub-needs within a cluster.
 - The cluster names below are FIXED and APPROVED. Use them EXACTLY as written (e.g. "Core Stability", "Agency & Growth") — never rename, rephrase, or shorten them.
+- Be direct and draw real conclusions everywhere the data supports them. The one exception is the note below about #3 vs #4: when it says those two are a toss-up, say so plainly in the report rather than implying a clear gap that is not actually there. This is the only place a caveat belongs, everything else stays direct per the rule above.
 
 Person: ${firstName}, pronouns: ${pronoun}
 Top 3 Priority Need Clusters (in order, strongest signal first): ${top3Labels.join(", ")}
 Full ranked list: ${allRanked}
 
 Actual head-to-head trade-off data — INTERNAL GROUNDING ONLY, never quote or paraphrase these numbers in your output. Use this only to decide which patterns are real and which insights are worth surfacing:
-${matchupText}
+${matchupText}${stabilityNote}
 
 Output ONLY a single valid JSON object, no markdown code fences, no commentary before or after. Match this exact shape:
 
 {
   "keyPattern": "Exactly 2 sentences, second person, no numbers. First sentence: describe, in plain language, what they consistently protect or prioritize when forced to choose between competing needs. Second sentence: state directly and concretely what this means they need right now, in the form 'This shows that, right now, you need [X].' Make the practical implication explicit, not just the observation.",
   "choiceInsights": [
-    // EXACTLY 3 entries in this array — not 2, not 4, exactly 3. Each one a distinct, meaningful insight revealed by the trade-off data (prefer insights involving the top 3 clusters). Do NOT restate the key pattern. Do NOT describe the trade-off mechanics ("when X and Y competed", "you picked X over Y") — describe only what the pattern MEANS for how they work.
+    // EXACTLY 3 entries in this array — not 2, not 4, exactly 3, even if the rank-stability note below gives you something to say. Each one a distinct, meaningful insight revealed by the trade-off data (prefer insights involving the top 3 clusters). Do NOT restate the key pattern. Do NOT describe the trade-off mechanics ("when X and Y competed", "you picked X over Y") — describe only what the pattern MEANS for how they work.
     {
-      "headline": "A short headline sentence starting with 'You need...' (direct, not 'you might need') stating the core insight itself.",
+      "headline": "A short headline sentence starting with 'You need...' (direct, not 'you might need') stating the core insight itself. No extra fields on this object beyond headline and body.",
       "body": "1-2 sentences in second person explaining what this insight means in practice for how ${firstName} works and why it matters, referencing the relevant cluster(s) by their exact label where natural. Ground this in the matchup data internally, but state only the conclusion, never the measurement."
     }
   ],
