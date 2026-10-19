@@ -29,7 +29,9 @@ export async function POST(request: Request) {
 
   await Promise.allSettled([
     // notifyCrmLead already skips internal/test-account emails itself.
-    ...(isNonLeadEmail(record.email) ? [] : [sendAdminEmail("New Diagnostics sign-up", lines.join("\n"))]),
+    // A pilot/team sign-up isn't a sales lead either — same reasoning as
+    // the CRM skip, just for this admin notification instead.
+    ...(isNonLeadEmail(record.email) || record.team ? [] : [sendAdminEmail("New Diagnostics sign-up", lines.join("\n"))]),
     notifyCrmLead({
       firstName: record.first_name ?? "",
       lastName: record.last_name ?? "",

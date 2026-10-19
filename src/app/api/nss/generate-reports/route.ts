@@ -220,7 +220,12 @@ export async function POST(request: Request) {
               reportUrl: archived.pdfUrl,
               team: submission.team as string | null,
             }),
-            ...(isNonLeadEmail(submission.user_email as string)
+            // A pilot/team completion isn't a sales lead either — same
+            // reasoning as the CRM skip, just for this admin notification.
+            // The respondent's own "your report is ready" email below stays
+            // on only the original internal/test-account check: a team
+            // member should still get that email, branding and all.
+            ...(isNonLeadEmail(submission.user_email as string) || submission.team
               ? []
               : [
                   sendAdminEmail(
@@ -232,6 +237,10 @@ export async function POST(request: Request) {
                       `Report: ${archived.pdfUrl}`,
                     ].join("\n"),
                   ),
+                ]),
+            ...(isNonLeadEmail(submission.user_email as string)
+              ? []
+              : [
                   sendRespondentReportEmail({
                     to: submission.user_email as string,
                     firstName: profile?.first_name || firstName,
