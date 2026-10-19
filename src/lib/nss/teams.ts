@@ -131,6 +131,35 @@ export async function resyncRosterFromSheet(
   return { added, updated, missing: missingEmails.length };
 }
 
+// Removes a roster row — typically used to clear out a stale entry flagged
+// "Not in sheet" (e.g. after an email typo correction created a fresh row
+// for the corrected address). If this row was already invited, a real
+// account exists under its email independent of this table; that account
+// is also deleted here, since otherwise there'd be no way to find or clean
+// it up from the workspace at all. Returns whether an account was found
+// and removed, so the caller can tell the admin what actually happened.
+export async function removeRosterEntry(rosterId: string): Promise<{ accountDeleted: boolean }> {
+  const admin = createAdminClient();
+  const { data: entry, error: entryError } = await admin
+    .from("team_roster")
+    .select("email, invited_at")
+    .eq("id", rosterId)
+    .maybeSingle();
+  if (entryError || !entry) throw entryError ?? new Error("Roster entry not found");
+
+  const { error: deleteError } = await admin.from("team_roster").delete().eq("id", rosterId);
+  if (deleteError) throw deleteError;
+
+  if (!entry.invited_at) return { accountDeleted: false };
+
+  const { data: profile } = await admin.from("user_profiles").select("id").eq("email", entry.email).maybeSingle();
+  if (!profile) return { accountDeleted: false };
+
+  const { error: authError } = await admin.auth.admin.deleteUser(profile.id);
+  if (authError) throw authError;
+  return { accountDeleted: true };
+}
+
 // Used so the invite-send step never has to ask for the manager's first
 // name separately: check whether the manager is themselves a row in this
 // team's roster first (most common case — the manager is on the same

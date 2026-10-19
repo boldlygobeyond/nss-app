@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, ShieldAlert, Send, Check, FileText, BarChart3, RotateCw, AlertTriangle } from "lucide-react";
+import { Loader2, ShieldAlert, Send, Check, FileText, BarChart3, RotateCw, AlertTriangle, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, listAllProfiles } from "@/lib/nss/userProfiles";
 import { buildFullName } from "@/lib/nss/reportFilename";
@@ -55,6 +55,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
   const [profiles, setProfiles] = useState<Record<string, { first_name: string | null; last_name: string | null }>>({});
 
   const [sendState, setSendState] = useState<Record<string, SendState>>({});
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const [resyncing, setResyncing] = useState(false);
   const [resyncResult, setResyncResult] = useState<string | null>(null);
   const [resyncError, setResyncError] = useState<string | null>(null);
@@ -155,6 +156,24 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     const pending = roster.filter((r) => !r.invited_at);
     for (const entry of pending) {
       await sendInvite(entry);
+    }
+  };
+
+  const handleRemove = async (entry: RosterEntry) => {
+    const name = `${entry.first_name} ${entry.last_name}`;
+    const confirmed = entry.invited_at
+      ? window.confirm(
+          `Remove ${name} from the roster? They were already invited, so this also permanently deletes their account (${entry.email}).`,
+        )
+      : window.confirm(`Remove ${name} from the roster?`);
+    if (!confirmed || !team) return;
+
+    setRemovingId(entry.id);
+    try {
+      const res = await fetch(`/api/nss/teams/${team.slug}/roster/${entry.id}`, { method: "DELETE" });
+      if (res.ok) await loadRoster(team.id);
+    } finally {
+      setRemovingId(null);
     }
   };
 
@@ -294,20 +313,34 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                               {entry.invited_at ? `Invited ${formatDate(entry.invited_at)}` : "Not invited"}
                             </td>
                             <td className="p-3">
-                              <button
-                                onClick={() => sendInvite(entry)}
-                                disabled={state === "sending"}
-                                className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
-                              >
-                                {state === "sending" ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : state === "sent" ? (
-                                  <Check className="w-3.5 h-3.5 text-primary" />
-                                ) : (
-                                  <Send className="w-3.5 h-3.5" />
-                                )}
-                                {entry.invited_at ? "Resend" : "Invite"}
-                              </button>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={() => sendInvite(entry)}
+                                  disabled={state === "sending"}
+                                  className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
+                                >
+                                  {state === "sending" ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : state === "sent" ? (
+                                    <Check className="w-3.5 h-3.5 text-primary" />
+                                  ) : (
+                                    <Send className="w-3.5 h-3.5" />
+                                  )}
+                                  {entry.invited_at ? "Resend" : "Invite"}
+                                </button>
+                                <button
+                                  onClick={() => handleRemove(entry)}
+                                  disabled={removingId === entry.id}
+                                  title="Remove from roster"
+                                  className="flex items-center justify-center h-8 w-8 text-muted-foreground border border-border/50 rounded-lg hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors disabled:opacity-50"
+                                >
+                                  {removingId === entry.id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
