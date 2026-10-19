@@ -5,48 +5,6 @@ export interface RosterRow {
   managerEmail: string;
 }
 
-// Minimal CSV parser — handles quoted fields (so a name with a comma in it
-// doesn't break), nothing fancier. Good enough for a 4-column roster sheet;
-// not meant as a general CSV library.
-function parseCsvLines(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inQuotes) {
-      if (c === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += c;
-      }
-    } else if (c === '"') {
-      inQuotes = true;
-    } else if (c === ",") {
-      row.push(field);
-      field = "";
-    } else if (c === "\n" || c === "\r") {
-      if (c === "\r" && text[i + 1] === "\n") i++;
-      row.push(field);
-      field = "";
-      if (row.some((f) => f.trim() !== "")) rows.push(row);
-      row = [];
-    } else {
-      field += c;
-    }
-  }
-  row.push(field);
-  if (row.some((f) => f.trim() !== "")) rows.push(row);
-  return rows;
-}
-
 // Accepts a few spellings of each header so a human copy-pasting into a
 // spreadsheet doesn't have to match an exact string.
 const HEADER_ALIASES: Record<keyof RosterRow, string[]> = {
@@ -56,14 +14,8 @@ const HEADER_ALIASES: Record<keyof RosterRow, string[]> = {
   managerEmail: ["manager_email", "manager email", "manager's email", "managers email"],
 };
 
-export function parseRosterCsv(text: string): { rows: RosterRow[]; errors: string[] } {
-  return rosterRowsFromGrid(parseCsvLines(text.trim()));
-}
-
-// Same validation/column-matching as parseRosterCsv, but for data that's
-// already a 2D array — what the Google Sheets API returns directly, no CSV
-// text involved, so the "select from Drive" path reuses every rule here
-// (required columns, blank/invalid-email handling) instead of duplicating it.
+// Validates and maps a 2D grid of cells (header row + data rows) into
+// roster entries — what the Google Sheets API returns directly.
 export function rosterRowsFromGrid(lines: string[][]): { rows: RosterRow[]; errors: string[] } {
   if (lines.length === 0) return { rows: [], errors: ["The sheet is empty."] };
 

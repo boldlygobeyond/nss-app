@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, ShieldAlert, Users, Upload, Check, FileSpreadsheet } from "lucide-react";
+import { Loader2, ShieldAlert, Users, Check, FileSpreadsheet } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile } from "@/lib/nss/userProfiles";
-import { parseRosterCsv, rosterRowsFromGrid, type RosterRow } from "@/lib/nss/rosterCsv";
+import { rosterRowsFromGrid, type RosterRow } from "@/lib/nss/rosterCsv";
 import { pickRosterFromGoogleSheets } from "@/lib/nss/googlePicker";
 import GlobalHeader from "@/components/GlobalHeader";
 
@@ -61,15 +61,6 @@ export default function TeamsPage() {
     };
     load();
   }, []);
-
-  const handleFile = async (file: File) => {
-    const text = await file.text();
-    const { rows: parsed, errors } = parseRosterCsv(text);
-    setFileName(file.name);
-    setRows(parsed);
-    setFolderId(null);
-    setParseErrors(errors);
-  };
 
   const handlePickFromDrive = async () => {
     setPickingFromDrive(true);
@@ -143,39 +134,24 @@ export default function TeamsPage() {
               <h2 className="font-heading text-sm font-semibold text-foreground mb-4">New team</h2>
               <input
                 className={`${inputClass} mb-3`}
-                placeholder="Team name (e.g. WI LGBT Chamber of Commerce)"
+                placeholder="Team name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
 
-              <div className="flex items-stretch gap-2 mb-2">
-                <label className="flex-1 flex items-center gap-2 h-10 px-3 rounded-lg border border-dashed border-border/50 text-sm text-muted-foreground cursor-pointer hover:bg-background transition-colors">
-                  <Upload className="w-4 h-4 shrink-0" />
-                  {fileName ?? "Upload roster CSV"}
-                  <input
-                    type="file"
-                    accept=".csv,text/csv"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleFile(file);
-                    }}
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={handlePickFromDrive}
-                  disabled={pickingFromDrive}
-                  className="flex items-center gap-2 h-10 px-3 rounded-lg border border-border/50 text-sm text-muted-foreground hover:bg-background transition-colors disabled:opacity-50 whitespace-nowrap"
-                >
-                  {pickingFromDrive ? (
-                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                  ) : (
-                    <FileSpreadsheet className="w-4 h-4 shrink-0" />
-                  )}
-                  Select from Drive
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handlePickFromDrive}
+                disabled={pickingFromDrive}
+                className="flex items-center gap-2 h-10 px-3 rounded-lg border border-dashed border-border/50 text-sm text-muted-foreground hover:bg-background transition-colors disabled:opacity-50 w-full mb-2"
+              >
+                {pickingFromDrive ? (
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                ) : (
+                  <FileSpreadsheet className="w-4 h-4 shrink-0" />
+                )}
+                {fileName ?? "Select roster sheet from Drive"}
+              </button>
               <p className="text-xs text-muted-foreground mb-2">
                 Columns: first_name, last_name, email, manager_email (a few header spellings are fine).
               </p>

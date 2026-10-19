@@ -2,12 +2,12 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, ShieldAlert, Send, Upload, Check, FileText, BarChart3, FileSpreadsheet } from "lucide-react";
+import { Loader2, ShieldAlert, Send, Check, FileText, BarChart3, FileSpreadsheet } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, listAllProfiles } from "@/lib/nss/userProfiles";
 import { buildFullName } from "@/lib/nss/reportFilename";
 import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
-import { parseRosterCsv, rosterRowsFromGrid, type RosterRow } from "@/lib/nss/rosterCsv";
+import { rosterRowsFromGrid, type RosterRow } from "@/lib/nss/rosterCsv";
 import { pickRosterFromGoogleSheets } from "@/lib/nss/googlePicker";
 import GlobalHeader from "@/components/GlobalHeader";
 
@@ -155,15 +155,6 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     }
   };
 
-  const handleFile = async (file: File) => {
-    const text = await file.text();
-    const { rows, errors } = parseRosterCsv(text);
-    setFileName(file.name);
-    setNewRows(rows);
-    setNewFolderId(null);
-    setParseErrors(errors);
-  };
-
   const handlePickFromDrive = async () => {
     setPickingFromDrive(true);
     setParseErrors([]);
@@ -306,34 +297,19 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
 
                 <div className="bg-card border border-border/50 rounded-2xl p-5">
                   <h3 className="font-heading text-sm font-semibold text-foreground mb-3">Add more people</h3>
-                  <div className="flex items-stretch gap-2 mb-2">
-                    <label className="flex-1 flex items-center gap-2 h-10 px-3 rounded-lg border border-dashed border-border/50 text-sm text-muted-foreground cursor-pointer hover:bg-background transition-colors">
-                      <Upload className="w-4 h-4 shrink-0" />
-                      {fileName ?? "Upload another CSV"}
-                      <input
-                        type="file"
-                        accept=".csv,text/csv"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleFile(file);
-                        }}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={handlePickFromDrive}
-                      disabled={pickingFromDrive}
-                      className="flex items-center gap-2 h-10 px-3 rounded-lg border border-border/50 text-sm text-muted-foreground hover:bg-background transition-colors disabled:opacity-50 whitespace-nowrap"
-                    >
-                      {pickingFromDrive ? (
-                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                      ) : (
-                        <FileSpreadsheet className="w-4 h-4 shrink-0" />
-                      )}
-                      Select from Drive
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handlePickFromDrive}
+                    disabled={pickingFromDrive}
+                    className="flex items-center gap-2 h-10 px-3 rounded-lg border border-dashed border-border/50 text-sm text-muted-foreground hover:bg-background transition-colors disabled:opacity-50 w-full mb-2"
+                  >
+                    {pickingFromDrive ? (
+                      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                    ) : (
+                      <FileSpreadsheet className="w-4 h-4 shrink-0" />
+                    )}
+                    {fileName ?? "Select roster sheet from Drive"}
+                  </button>
                   {parseErrors.length > 0 && (
                     <ul className="text-xs text-destructive mb-2 list-disc pl-4">
                       {parseErrors.map((err, i) => (
