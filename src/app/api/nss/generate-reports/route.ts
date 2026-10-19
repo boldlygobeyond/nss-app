@@ -8,6 +8,7 @@ import { archiveReportToDrive } from "@/lib/nss/googleDrive";
 import { notifyCrmLead, isNonLeadEmail } from "@/lib/nss/crm";
 import { sendAdminEmail } from "@/lib/nss/adminEmail";
 import { sendRespondentReportEmail } from "@/lib/nss/respondentEmail";
+import { sendTeamReportReadyEmail } from "@/lib/nss/teamReportReadyEmail";
 import { randomBytes } from "node:crypto";
 import { renderReportPdf } from "@/lib/nss/pdfRender";
 import { cacheReportPdf } from "@/lib/nss/pdfStorage";
@@ -241,13 +242,21 @@ export async function POST(request: Request) {
             ...(isNonLeadEmail(submission.user_email as string)
               ? []
               : [
-                  sendRespondentReportEmail({
-                    to: submission.user_email as string,
-                    firstName: profile?.first_name || firstName,
-                    submissionId,
-                    downloadUrl: `${origin}/api/nss/report-pdf-download?id=${submissionId}&token=${pdfDownloadToken}`,
-                    logoUrl: `${origin}/logo/bgb-line-almond.png`,
-                  }),
+                  submission.team
+                    ? sendTeamReportReadyEmail({
+                        to: submission.user_email as string,
+                        firstName: profile?.first_name || firstName,
+                        submissionId,
+                        downloadUrl: `${origin}/api/nss/report-pdf-download?id=${submissionId}&token=${pdfDownloadToken}`,
+                        logoUrl: `${origin}/logo/bgb-line-almond.png`,
+                      })
+                    : sendRespondentReportEmail({
+                        to: submission.user_email as string,
+                        firstName: profile?.first_name || firstName,
+                        submissionId,
+                        downloadUrl: `${origin}/api/nss/report-pdf-download?id=${submissionId}&token=${pdfDownloadToken}`,
+                        logoUrl: `${origin}/logo/bgb-line-almond.png`,
+                      }),
                 ]),
           ]);
         } catch (driveError) {
