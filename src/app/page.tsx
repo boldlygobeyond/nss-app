@@ -146,9 +146,9 @@ function AdminHomescreen({
       icon: BarChart3,
     },
     isAdmin && {
-      href: "/admin/team-invites",
-      label: "Team Invites",
-      description: "Invite pilot/team members directly, outside the lead funnel.",
+      href: "/admin/teams",
+      label: "Teams",
+      description: "Load a pilot roster from a spreadsheet, invite them, and view their reports.",
       icon: UserPlus,
     },
   ].filter((c): c is { href: string; label: string; description: string; icon: LucideIcon } => !!c);
