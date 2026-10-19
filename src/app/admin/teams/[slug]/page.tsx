@@ -2,19 +2,20 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, ShieldAlert, Send, Check, FileText, BarChart3, FileSpreadsheet } from "lucide-react";
+import { Loader2, ShieldAlert, Send, Check, FileText, BarChart3, FileSpreadsheet, RotateCw, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, listAllProfiles } from "@/lib/nss/userProfiles";
 import { buildFullName } from "@/lib/nss/reportFilename";
 import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import { rosterRowsFromGrid, type RosterRow } from "@/lib/nss/rosterCsv";
-import { pickRosterFromGoogleSheets } from "@/lib/nss/googlePicker";
+import { pickRosterFromGoogleSheets, fetchRosterGridForSpreadsheet } from "@/lib/nss/googlePicker";
 import GlobalHeader from "@/components/GlobalHeader";
 
 interface Team {
   id: string;
   name: string;
   slug: string;
+  drive_spreadsheet_id: string | null;
 }
 
 interface RosterEntry {
@@ -24,6 +25,7 @@ interface RosterEntry {
   email: string;
   manager_email: string;
   invited_at: string | null;
+  missing_from_sheet: boolean;
 }
 
 interface ReportEntry {
@@ -56,15 +58,19 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
   const [fileName, setFileName] = useState<string | null>(null);
   const [newRows, setNewRows] = useState<RosterRow[]>([]);
   const [newFolderId, setNewFolderId] = useState<string | null>(null);
+  const [newSpreadsheetId, setNewSpreadsheetId] = useState<string | null>(null);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
   const [pickingFromDrive, setPickingFromDrive] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
+  const [resyncResult, setResyncResult] = useState<string | null>(null);
+  const [resyncError, setResyncError] = useState<string | null>(null);
 
   const loadRoster = async (teamId: string) => {
     const supabase = createClient();
     const { data } = await supabase
       .from("team_roster")
-      .select("id, first_name, last_name, email, manager_email, invited_at")
+      .select("id, first_name, last_name, email, manager_email, invited_at, missing_from_sheet")
       .eq("team_id", teamId)
       .order("last_name");
     setRoster(data ?? []);
@@ -115,7 +121,11 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
       }
       setAuthorized(true);
 
-      const { data: teamRow } = await supabase.from("teams").select("id, name, slug").eq("slug", slug).maybeSingle();
+      const { data: teamRow } = await supabase
+        .from("teams")
+        .select("id, name, slug, drive_spreadsheet_id")
+        .eq("slug", slug)
+        .maybeSingle();
       if (!teamRow) {
         setLoading(false);
         return;
@@ -165,6 +175,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
       setFileName(result.fileName);
       setNewRows(rows);
       setNewFolderId(result.folderId);
+      setNewSpreadsheetId(result.spreadsheetId);
       setParseErrors(errors);
     } catch (err) {
       setParseErrors([err instanceof Error ? err.message : "Could not load that spreadsheet."]);
@@ -180,17 +191,54 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
       const res = await fetch(`/api/nss/teams/${team.slug}/roster`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: newRows, folderId: newFolderId }),
+        body: JSON.stringify({ rows: newRows, folderId: newFolderId, spreadsheetId: newSpreadsheetId }),
       });
       if (res.ok) {
         setFileName(null);
         setNewRows([]);
         setNewFolderId(null);
+        setNewSpreadsheetId(null);
         setParseErrors([]);
         await loadRoster(team.id);
       }
     } finally {
       setAdding(false);
+    }
+  };
+
+  const handleResync = async () => {
+    if (!team?.drive_spreadsheet_id) return;
+    setResyncing(true);
+    setResyncResult(null);
+    setResyncError(null);
+    try {
+      const grid = await fetchRosterGridForSpreadsheet(team.drive_spreadsheet_id);
+      const { rows, errors } = rosterRowsFromGrid(grid);
+      if (errors.length > 0) {
+        setResyncError(errors.join(" "));
+        return;
+      }
+      const res = await fetch(`/api/nss/teams/${team.slug}/resync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Could not resync from the sheet.");
+      }
+      const result = (await res.json()) as { added: number; updated: number; missing: number };
+      const parts = [
+        result.added > 0 && `${result.added} added`,
+        result.updated > 0 && `${result.updated} updated`,
+        result.missing > 0 && `${result.missing} no longer in the sheet`,
+      ].filter(Boolean);
+      setResyncResult(parts.length > 0 ? parts.join(", ") : "No changes — roster already matches the sheet.");
+      await loadRoster(team.id);
+    } catch (err) {
+      setResyncError(err instanceof Error ? err.message : "Could not resync from the sheet.");
+    } finally {
+      setResyncing(false);
     }
   };
 
@@ -240,15 +288,29 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="font-heading text-sm font-semibold text-foreground">Roster</h2>
-                  {pendingCount > 0 && (
-                    <button
-                      onClick={sendAllPending}
-                      className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-                    >
-                      <Send className="w-3.5 h-3.5" /> Send all pending ({pendingCount})
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {team.drive_spreadsheet_id && (
+                      <button
+                        onClick={handleResync}
+                        disabled={resyncing}
+                        className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
+                      >
+                        {resyncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
+                        Resync from sheet
+                      </button>
+                    )}
+                    {pendingCount > 0 && (
+                      <button
+                        onClick={sendAllPending}
+                        className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                      >
+                        <Send className="w-3.5 h-3.5" /> Send all pending ({pendingCount})
+                      </button>
+                    )}
+                  </div>
                 </div>
+                {resyncResult && <p className="text-xs text-muted-foreground mb-3">{resyncResult}</p>}
+                {resyncError && <p className="text-xs text-destructive mb-3">{resyncError}</p>}
 
                 <div className="overflow-x-auto rounded-xl border border-border/50 mb-6">
                   <table className="w-full border-collapse">
@@ -266,7 +328,14 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                         const state = sendState[entry.id] ?? "idle";
                         return (
                           <tr key={entry.id} className="border-b border-border/30 last:border-0">
-                            <td className="p-3 text-sm text-foreground">{entry.first_name} {entry.last_name}</td>
+                            <td className="p-3 text-sm text-foreground">
+                              {entry.first_name} {entry.last_name}
+                              {entry.missing_from_sheet && (
+                                <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                                  <AlertTriangle className="w-2.5 h-2.5" /> Not in sheet
+                                </span>
+                              )}
+                            </td>
                             <td className="p-3 text-sm text-muted-foreground">{entry.email}</td>
                             <td className="p-3 text-sm text-muted-foreground">{entry.manager_email}</td>
                             <td className="p-3 text-sm text-muted-foreground">

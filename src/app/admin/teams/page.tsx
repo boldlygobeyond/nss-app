@@ -26,6 +26,7 @@ export default function TeamsPage() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [rows, setRows] = useState<RosterRow[]>([]);
   const [folderId, setFolderId] = useState<string | null>(null);
+  const [spreadsheetId, setSpreadsheetId] = useState<string | null>(null);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -72,6 +73,7 @@ export default function TeamsPage() {
       setFileName(result.fileName);
       setRows(parsed);
       setFolderId(result.folderId);
+      setSpreadsheetId(result.spreadsheetId);
       setParseErrors(errors);
     } catch (err) {
       setParseErrors([err instanceof Error ? err.message : "Could not load that spreadsheet."]);
@@ -88,7 +90,7 @@ export default function TeamsPage() {
       const res = await fetch("/api/nss/teams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), rows, folderId }),
+        body: JSON.stringify({ name: name.trim(), rows, folderId, spreadsheetId }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -98,6 +100,7 @@ export default function TeamsPage() {
       setFileName(null);
       setRows([]);
       setFolderId(null);
+      setSpreadsheetId(null);
       setParseErrors([]);
       await loadTeams();
     } catch (err) {

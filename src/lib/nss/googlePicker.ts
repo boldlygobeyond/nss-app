@@ -162,7 +162,7 @@ async function fetchParentFolderId(fileId: string, accessToken: string): Promise
 }
 
 export async function pickRosterFromGoogleSheets(): Promise<
-  { grid: string[][]; fileName: string; folderId: string | null } | null
+  { grid: string[][]; fileName: string; folderId: string | null; spreadsheetId: string } | null
 > {
   await loadGoogleScripts();
   const accessToken = await requestAccessToken();
@@ -172,5 +172,14 @@ export async function pickRosterFromGoogleSheets(): Promise<
     fetchSheetGrid(doc.id, accessToken),
     fetchParentFolderId(doc.id, accessToken),
   ]);
-  return { grid, fileName: doc.name, folderId };
+  return { grid, fileName: doc.name, folderId, spreadsheetId: doc.id };
+}
+
+// Re-reads a sheet already picked earlier (its id stored on the team) —
+// used by "resync from sheet," which shouldn't make the admin pick the
+// file again just to pull in corrections someone made since the last sync.
+export async function fetchRosterGridForSpreadsheet(spreadsheetId: string): Promise<string[][]> {
+  await loadGoogleScripts();
+  const accessToken = await requestAccessToken();
+  return fetchSheetGrid(spreadsheetId, accessToken);
 }

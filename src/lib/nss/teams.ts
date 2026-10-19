@@ -11,11 +11,12 @@ function slugify(name: string): string {
   );
 }
 
-export async function createTeam(
-  name: string,
-  rows: RosterRow[],
-  driveFolderId?: string | null,
-): Promise<{ slug: string }> {
+export interface DriveSource {
+  folderId: string | null;
+  spreadsheetId: string | null;
+}
+
+export async function createTeam(name: string, rows: RosterRow[], drive?: DriveSource): Promise<{ slug: string }> {
   const admin = createAdminClient();
   const baseSlug = slugify(name);
   let slug = baseSlug;
@@ -25,30 +26,36 @@ export async function createTeam(
     slug = `${baseSlug}-${n}`;
   }
 
-  const { error } = await admin
-    .from("teams")
-    .insert({ name: name.trim(), slug, drive_folder_id: driveFolderId ?? null });
+  const { error } = await admin.from("teams").insert({
+    name: name.trim(),
+    slug,
+    drive_folder_id: drive?.folderId ?? null,
+    drive_spreadsheet_id: drive?.spreadsheetId ?? null,
+  });
   if (error) throw error;
 
-  await addRosterRows(slug, rows, driveFolderId);
+  await addRosterRows(slug, rows, drive);
   return { slug };
 }
 
-export async function addRosterRows(teamSlug: string, rows: RosterRow[], driveFolderId?: string | null): Promise<void> {
+export async function addRosterRows(teamSlug: string, rows: RosterRow[], drive?: DriveSource): Promise<void> {
   const admin = createAdminClient();
   const { data: team, error: teamError } = await admin
     .from("teams")
-    .select("id, drive_folder_id")
+    .select("id, drive_folder_id, drive_spreadsheet_id")
     .eq("slug", teamSlug)
     .maybeSingle();
   if (teamError || !team) throw teamError ?? new Error("Team not found");
 
-  // First Drive-sourced pick wins — if a team was created from a CSV (no
-  // folder yet) and someone later adds to the roster by picking from
-  // Drive, that becomes the reports folder. If one's already set, a later
-  // pick never silently redirects where reports land.
-  if (driveFolderId && !team.drive_folder_id) {
-    await admin.from("teams").update({ drive_folder_id: driveFolderId }).eq("id", team.id);
+  // First Drive-sourced pick wins — if a team's folder/sheet aren't set yet
+  // and someone adds to the roster by picking from Drive, that becomes the
+  // team's reports folder and resync source. If one's already set, a later
+  // pick never silently redirects where reports land or what resync reads.
+  if (drive?.folderId && !team.drive_folder_id) {
+    await admin
+      .from("teams")
+      .update({ drive_folder_id: drive.folderId, drive_spreadsheet_id: drive.spreadsheetId })
+      .eq("id", team.id);
   }
 
   if (rows.length === 0) return;
@@ -57,6 +64,8 @@ export async function addRosterRows(teamSlug: string, rows: RosterRow[], driveFo
   // rows instead of erroring on the unique(team_id, email) constraint, and
   // only the columns listed here are touched, so invited_at on an
   // already-invited person is never reset back to null by a re-upload.
+  // missing_from_sheet resets to false here too — a row touched by a fresh
+  // read is, by definition, currently in the sheet.
   const { error } = await admin.from("team_roster").upsert(
     rows.map((r) => ({
       team_id: team.id,
@@ -64,10 +73,59 @@ export async function addRosterRows(teamSlug: string, rows: RosterRow[], driveFo
       last_name: r.lastName,
       email: r.email,
       manager_email: r.managerEmail,
+      missing_from_sheet: false,
     })),
     { onConflict: "team_id,email" },
   );
   if (error) throw error;
+}
+
+// "The spreadsheet is the source of truth" — re-reads it and reconciles:
+// rows matching an email already on the roster get their name/manager
+// updated, new emails get added, and roster rows whose email no longer
+// appears get flagged (never deleted — someone might already have a real
+// account from an earlier invite under that row, which a resync has no
+// business removing).
+export async function resyncRosterFromSheet(
+  teamSlug: string,
+  rows: RosterRow[],
+): Promise<{ added: number; updated: number; missing: number }> {
+  const admin = createAdminClient();
+  const { data: team, error: teamError } = await admin
+    .from("teams")
+    .select("id")
+    .eq("slug", teamSlug)
+    .maybeSingle();
+  if (teamError || !team) throw teamError ?? new Error("Team not found");
+
+  const { data: existingRows } = await admin.from("team_roster").select("email").eq("team_id", team.id);
+  const existingEmails = new Set((existingRows ?? []).map((r) => r.email));
+  const sheetEmails = new Set(rows.map((r) => r.email));
+
+  const added = rows.filter((r) => !existingEmails.has(r.email)).length;
+  const updated = rows.length - added;
+
+  if (rows.length > 0) {
+    const { error } = await admin.from("team_roster").upsert(
+      rows.map((r) => ({
+        team_id: team.id,
+        first_name: r.firstName,
+        last_name: r.lastName,
+        email: r.email,
+        manager_email: r.managerEmail,
+        missing_from_sheet: false,
+      })),
+      { onConflict: "team_id,email" },
+    );
+    if (error) throw error;
+  }
+
+  const missingEmails = [...existingEmails].filter((e) => !sheetEmails.has(e));
+  if (missingEmails.length > 0) {
+    await admin.from("team_roster").update({ missing_from_sheet: true }).eq("team_id", team.id).in("email", missingEmails);
+  }
+
+  return { added, updated, missing: missingEmails.length };
 }
 
 // Used so the invite-send step never has to ask for the manager's first
