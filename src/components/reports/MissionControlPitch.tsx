@@ -21,9 +21,11 @@ export default function MissionControlPitch({
 }) {
   return (
     <>
-      <h1 className="font-heading text-3xl md:text-4xl font-bold text-foreground mb-4 text-center leading-tight">
-        {headline}
-      </h1>
+      {!simple && (
+        <h1 className="font-heading text-3xl md:text-4xl font-bold text-foreground mb-4 text-center leading-tight">
+          {headline}
+        </h1>
+      )}
 
       {!simple && (
         <>
@@ -62,14 +64,17 @@ export default function MissionControlPitch({
         </div>
       </div>
 
-      <div className="bg-card border border-border/50 rounded-2xl p-8 md:p-10 text-center shadow-sm">
-        <p className="text-foreground text-lg leading-relaxed mb-8 max-w-xl mx-auto">
-          {simple
-            ? "Ready to See the Signals?"
-            : "Ready to see what's possible for your crew? Look over your personal insights and schedule a call with our co-founders today to get the personalized flight plan for your team."}
-        </p>
-        {cta}
-      </div>
+      {simple ? (
+        <div className="text-center">{cta}</div>
+      ) : (
+        <div className="bg-card border border-border/50 rounded-2xl p-8 md:p-10 text-center shadow-sm">
+          <p className="text-foreground text-lg leading-relaxed mb-8 max-w-xl mx-auto">
+            Ready to see what&apos;s possible for your crew? Look over your personal insights and schedule a call
+            with our co-founders today to get the personalized flight plan for your team.
+          </p>
+          {cta}
+        </div>
+      )}
     </>
   );
 }
