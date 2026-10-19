@@ -48,7 +48,9 @@ export default function MissionControlPitch({
 
       <div className="mb-20">
         <h2 className="font-heading text-2xl md:text-3xl font-bold text-foreground mb-8 text-center leading-snug">
-          But the Needs Signal Survey is just one small piece of our Mission Control System.
+          {simple
+            ? "Your Needs Signal Report is generating, but it's just one small piece of our Mission Control System."
+            : "But the Needs Signal Survey is just one small piece of our Mission Control System."}
         </h2>
         <div className="grid md:grid-cols-2 gap-4">
           {MISSION_CONTROL_CARDS.map((card) => (

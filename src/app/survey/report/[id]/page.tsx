@@ -111,11 +111,7 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
           <MissionControlPitch
             simple={isTeam}
-            headline={
-              isTeam
-                ? "Your Needs Signal Report is generating, but it's just one small piece of our Mission Control System."
-                : "Your personal needs report is generating, but that's just the beginning."
-            }
+            headline="Your personal needs report is generating, but that's just the beginning."
             cta={
               <>
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
