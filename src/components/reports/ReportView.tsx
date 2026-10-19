@@ -59,6 +59,7 @@ export default function ReportView({
   pronouns,
   variant = "card",
   forPdf = false,
+  isTeam = false,
 }: {
   reportData: ReportData | null;
   scores: Record<ClusterKey, ClusterScore> | null;
@@ -66,6 +67,9 @@ export default function ReportView({
   pronouns?: string | null;
   variant?: "card" | "plain";
   forPdf?: boolean;
+  // Hides the "book a call" pitch box below — a pilot/team member is
+  // already a client, not someone to convert into a sales call.
+  isTeam?: boolean;
 }) {
   // Also treats a report saved under an older schema version (missing
   // rippleChain) as "not generated" rather than crashing on it — the owner
@@ -187,7 +191,7 @@ export default function ReportView({
         ))}
       </div>
 
-      {!forPdf && (
+      {!forPdf && !isTeam && (
         <div className="mt-10 p-4 rounded-lg bg-secondary/50 border border-border/50 print:break-inside-avoid">
           <p className="font-heading text-base font-semibold text-foreground mb-3 text-center">
             Ready to decode your system and unlock what&apos;s possible?

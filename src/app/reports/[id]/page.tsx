@@ -183,22 +183,29 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
             scores={submission.scores}
             firstName={submission.respondent_name}
             pronouns={submission.pronouns}
+            isTeam={!!submission.team}
           />
 
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
             <button
               onClick={handleDownloadPdf}
               disabled={downloadingPdf}
-              className="h-12 px-8 text-base rounded-lg border-2 border-primary text-primary hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className={`h-12 px-8 text-base rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                submission.team
+                  ? "bg-primary hover:bg-primary/90 text-primary-foreground shadow-md"
+                  : "border-2 border-primary text-primary hover:bg-primary/10"
+              }`}
             >
               {downloadingPdf ? "Preparing..." : "Download PDF"}
             </button>
-            <button
-              onClick={handleScheduleCall}
-              className="h-12 px-8 text-base rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-md transition-colors"
-            >
-              Get Your Team&apos;s Customized Flight Plan!
-            </button>
+            {!submission.team && (
+              <button
+                onClick={handleScheduleCall}
+                className="h-12 px-8 text-base rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-md transition-colors"
+              >
+                Get Your Team&apos;s Customized Flight Plan!
+              </button>
+            )}
           </div>
         </div>
       )}
