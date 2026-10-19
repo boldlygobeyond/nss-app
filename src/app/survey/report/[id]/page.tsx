@@ -118,8 +118,8 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
                   <button
                     onClick={handleViewReport}
                     disabled={!isReportReady}
-                    className={`h-12 px-8 text-base rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed text-primary-foreground transition-colors ${
-                      isReportReady ? "animate-pulse shadow-[0_0_24px_6px] shadow-primary/50" : "shadow-md"
+                    className={`h-12 px-8 text-base rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed text-primary-foreground shadow-md transition-colors ${
+                      isReportReady ? "animate-[pulse_0.6s_ease-in-out_2]" : ""
                     }`}
                   >
                     {isReportReady ? "View My Report" : "Compiling your profile..."}
