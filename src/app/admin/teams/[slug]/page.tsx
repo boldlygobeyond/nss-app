@@ -36,6 +36,19 @@ interface ReportEntry {
   completedAt: string | null;
 }
 
+type NssStatus = "not_started" | "in_progress" | "complete";
+const NSS_STATUS_RANK: Record<string, number> = { in_progress: 1, completed: 2, report_generated: 2 };
+const NSS_STATUS_LABEL: Record<NssStatus, string> = {
+  not_started: "Not started",
+  in_progress: "In progress",
+  complete: "Complete",
+};
+const NSS_STATUS_COLOR: Record<NssStatus, string> = {
+  not_started: "bg-muted-foreground/40",
+  in_progress: "bg-amber-500",
+  complete: "bg-emerald-500",
+};
+
 type Tab = "roster" | "reports" | "snapshot";
 type SendState = "idle" | "sending" | "sent" | "error";
 
@@ -53,6 +66,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [reports, setReports] = useState<ReportEntry[]>([]);
   const [profiles, setProfiles] = useState<Record<string, { first_name: string | null; last_name: string | null }>>({});
+  const [nssStatusByEmail, setNssStatusByEmail] = useState<Record<string, string>>({});
 
   const [sendState, setSendState] = useState<Record<string, SendState>>({});
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -72,11 +86,25 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
 
   const loadReports = async () => {
     const supabase = createClient();
-    const { data: submissions } = await supabase
+    // No status filter here — every submission for this team, so the
+    // roster's NSS-status column can tell not-started apart from
+    // in-progress apart from complete, not just "has a finished report."
+    const { data: allSubmissions } = await supabase
       .from("nss_submissions")
-      .select("id, respondent_name, user_email, user_id")
-      .eq("team", slug)
-      .in("status", ["completed", "report_generated"]);
+      .select("id, respondent_name, user_email, user_id, status")
+      .eq("team", slug);
+
+    const statusByEmail: Record<string, string> = {};
+    (allSubmissions ?? []).forEach((s) => {
+      if (!s.user_email) return;
+      const email = s.user_email.toLowerCase();
+      const existingRank = NSS_STATUS_RANK[statusByEmail[email]] ?? -1;
+      const thisRank = NSS_STATUS_RANK[s.status] ?? -1;
+      if (thisRank >= existingRank) statusByEmail[email] = s.status;
+    });
+    setNssStatusByEmail(statusByEmail);
+
+    const submissions = (allSubmissions ?? []).filter((s) => s.status === "completed" || s.status === "report_generated");
 
     const allResponses = await fetchAllRows<{ submission_id: string; answered_at: string }>((from, to) =>
       supabase.from("nss_responses").select("submission_id, answered_at").order("id").range(from, to),
@@ -89,7 +117,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     });
 
     setReports(
-      (submissions ?? [])
+      submissions
         .map((s) => ({ ...s, completedAt: lastAnswered[s.id] ?? null }))
         .sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? "")),
     );
@@ -97,6 +125,13 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     const allProfiles = await listAllProfiles(supabase);
     setProfiles(Object.fromEntries(allProfiles.map((p) => [p.id, p])));
   };
+
+  function nssStatusFor(email: string): NssStatus {
+    const raw = nssStatusByEmail[email.toLowerCase()];
+    if (raw === "completed" || raw === "report_generated") return "complete";
+    if (raw === "in_progress") return "in_progress";
+    return "not_started";
+  }
 
   useEffect(() => {
     const load = async () => {
@@ -287,18 +322,26 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                   <table className="w-full border-collapse">
                     <thead className="bg-secondary">
                       <tr>
+                        <th className="p-3 w-8" />
                         <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Name</th>
                         <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</th>
                         <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Manager</th>
-                        <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</th>
+                        <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Invite Status</th>
                         <th className="p-3" />
                       </tr>
                     </thead>
                     <tbody className="bg-card">
                       {roster.map((entry) => {
                         const state = sendState[entry.id] ?? "idle";
+                        const nssStatus = nssStatusFor(entry.email);
                         return (
                           <tr key={entry.id} className="border-b border-border/30 last:border-0">
+                            <td className="p-3">
+                              <span
+                                title={`NSS status: ${NSS_STATUS_LABEL[nssStatus]}`}
+                                className={`block w-2.5 h-2.5 rounded-full ${NSS_STATUS_COLOR[nssStatus]}`}
+                              />
+                            </td>
                             <td className="p-3 text-sm text-foreground">
                               {entry.first_name} {entry.last_name}
                               {entry.missing_from_sheet && (
