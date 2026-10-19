@@ -148,11 +148,26 @@ async function fetchSheetGrid(spreadsheetId: string, accessToken: string): Promi
   return values.values ?? [];
 }
 
-export async function pickRosterFromGoogleSheets(): Promise<{ grid: string[][]; fileName: string } | null> {
+async function fetchParentFolderId(fileId: string, accessToken: string): Promise<string | null> {
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?fields=parents&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as { parents?: string[] };
+  return data.parents?.[0] ?? null;
+}
+
+export async function pickRosterFromGoogleSheets(): Promise<
+  { grid: string[][]; fileName: string; folderId: string | null } | null
+> {
   await loadGoogleScripts();
   const accessToken = await requestAccessToken();
   const doc = await openPicker(accessToken);
   if (!doc) return null;
-  const grid = await fetchSheetGrid(doc.id, accessToken);
-  return { grid, fileName: doc.name };
+  const [grid, folderId] = await Promise.all([
+    fetchSheetGrid(doc.id, accessToken),
+    fetchParentFolderId(doc.id, accessToken),
+  ]);
+  return { grid, fileName: doc.name, folderId };
 }

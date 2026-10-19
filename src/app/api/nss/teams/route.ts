@@ -10,13 +10,17 @@ export async function POST(request: Request) {
   const admin = await requireAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: admin.status });
 
-  const { name, rows } = (await request.json()) as { name?: string; rows?: RosterRow[] };
+  const { name, rows, folderId } = (await request.json()) as {
+    name?: string;
+    rows?: RosterRow[];
+    folderId?: string | null;
+  };
   if (!name?.trim() || !Array.isArray(rows) || rows.length === 0) {
     return NextResponse.json({ error: "A team name and at least one roster row are required" }, { status: 400 });
   }
 
   try {
-    const { slug } = await createTeam(name, rows);
+    const { slug } = await createTeam(name, rows, folderId);
     return NextResponse.json({ slug });
   } catch (error) {
     console.error("[teams] create failed:", error);

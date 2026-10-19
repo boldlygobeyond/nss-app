@@ -55,6 +55,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
   const [sendState, setSendState] = useState<Record<string, SendState>>({});
   const [fileName, setFileName] = useState<string | null>(null);
   const [newRows, setNewRows] = useState<RosterRow[]>([]);
+  const [newFolderId, setNewFolderId] = useState<string | null>(null);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
   const [pickingFromDrive, setPickingFromDrive] = useState(false);
@@ -159,6 +160,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     const { rows, errors } = parseRosterCsv(text);
     setFileName(file.name);
     setNewRows(rows);
+    setNewFolderId(null);
     setParseErrors(errors);
   };
 
@@ -171,6 +173,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
       const { rows, errors } = rosterRowsFromGrid(result.grid);
       setFileName(result.fileName);
       setNewRows(rows);
+      setNewFolderId(result.folderId);
       setParseErrors(errors);
     } catch (err) {
       setParseErrors([err instanceof Error ? err.message : "Could not load that spreadsheet."]);
@@ -186,11 +189,12 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
       const res = await fetch(`/api/nss/teams/${team.slug}/roster`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: newRows }),
+        body: JSON.stringify({ rows: newRows, folderId: newFolderId }),
       });
       if (res.ok) {
         setFileName(null);
         setNewRows([]);
+        setNewFolderId(null);
         setParseErrors([]);
         await loadRoster(team.id);
       }

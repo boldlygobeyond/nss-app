@@ -25,6 +25,7 @@ export default function TeamsPage() {
   const [name, setName] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [rows, setRows] = useState<RosterRow[]>([]);
+  const [folderId, setFolderId] = useState<string | null>(null);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -66,6 +67,7 @@ export default function TeamsPage() {
     const { rows: parsed, errors } = parseRosterCsv(text);
     setFileName(file.name);
     setRows(parsed);
+    setFolderId(null);
     setParseErrors(errors);
   };
 
@@ -78,6 +80,7 @@ export default function TeamsPage() {
       const { rows: parsed, errors } = rosterRowsFromGrid(result.grid);
       setFileName(result.fileName);
       setRows(parsed);
+      setFolderId(result.folderId);
       setParseErrors(errors);
     } catch (err) {
       setParseErrors([err instanceof Error ? err.message : "Could not load that spreadsheet."]);
@@ -94,7 +97,7 @@ export default function TeamsPage() {
       const res = await fetch("/api/nss/teams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), rows }),
+        body: JSON.stringify({ name: name.trim(), rows, folderId }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -103,6 +106,7 @@ export default function TeamsPage() {
       setName("");
       setFileName(null);
       setRows([]);
+      setFolderId(null);
       setParseErrors([]);
       await loadTeams();
     } catch (err) {
@@ -187,6 +191,7 @@ export default function TeamsPage() {
                 <p className="text-xs text-muted-foreground mb-4 flex items-center gap-1.5">
                   <Check className="w-3.5 h-3.5 text-primary" /> {rows.length} {rows.length === 1 ? "person" : "people"}{" "}
                   ready to load
+                  {folderId && " · reports will be saved next to this sheet"}
                 </p>
               )}
 

@@ -174,13 +174,25 @@ export async function POST(request: Request) {
           const bodyUrl = `${origin}/reports/${submissionId}/print?pdfMode=1`;
           const pdfBuffer = await renderReportPdf({ coverUrl, bodyUrl, cookies: cookieList });
 
-          await cacheReportPdf(createAdminClient(), submissionId, pdfBuffer).catch((cacheError) =>
+          const adminClient = createAdminClient();
+          await cacheReportPdf(adminClient, submissionId, pdfBuffer).catch((cacheError) =>
             console.warn("[generate-reports] PDF cache failed:", cacheError),
           );
+
+          let teamFolderId: string | null = null;
+          if (submission.team) {
+            const { data: teamRow } = await adminClient
+              .from("teams")
+              .select("drive_folder_id")
+              .eq("slug", submission.team as string)
+              .maybeSingle();
+            teamFolderId = teamRow?.drive_folder_id ?? null;
+          }
 
           const archived = await archiveReportToDrive({
             userEmail: submission.user_email as string,
             pdfBuffer,
+            teamFolderId,
           });
           const pdfDownloadToken = randomBytes(24).toString("hex");
           await supabase

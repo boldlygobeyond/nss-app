@@ -76,17 +76,29 @@ async function uploadPdf(
 export async function archiveReportToDrive(params: {
   userEmail: string;
   pdfBuffer: Buffer;
+  // A team's designated client folder (teams.drive_folder_id, captured
+  // when its roster was picked from Drive) — when set, the report lands
+  // in an "NSS Reports" subfolder inside it instead of the default
+  // NSS_Reports/{email}/ structure, so it sits next to the roster sheet
+  // the admin already organized by client.
+  teamFolderId?: string | null;
 }): Promise<{ pdfUrl: string; pdfDriveId: string }> {
   const driveId = process.env.GOOGLE_DRIVE_ID;
   if (!driveId) throw new Error("GOOGLE_DRIVE_ID is not configured");
 
   const drive = getDriveClient();
-  const rootFolderId = await findOrCreateFolder(drive, "NSS_Reports", driveId, driveId);
-  const userFolderId = await findOrCreateFolder(drive, params.userEmail, rootFolderId, driveId);
-
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
-  const file = await uploadPdf(drive, `${params.userEmail}_${timestamp}_NSS_Report.pdf`, params.pdfBuffer, userFolderId);
+  const targetFolderId = params.teamFolderId
+    ? await findOrCreateFolder(drive, "NSS Reports", params.teamFolderId, driveId)
+    : await findOrCreateFolder(
+        drive,
+        params.userEmail,
+        await findOrCreateFolder(drive, "NSS_Reports", driveId, driveId),
+        driveId,
+      );
+
+  const file = await uploadPdf(drive, `${params.userEmail}_${timestamp}_NSS_Report.pdf`, params.pdfBuffer, targetFolderId);
 
   return { pdfUrl: file.url, pdfDriveId: file.id };
 }

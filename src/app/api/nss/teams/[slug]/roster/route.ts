@@ -10,13 +10,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: admin.status });
 
   const { slug } = await params;
-  const { rows } = (await request.json()) as { rows?: RosterRow[] };
+  const { rows, folderId } = (await request.json()) as { rows?: RosterRow[]; folderId?: string | null };
   if (!Array.isArray(rows) || rows.length === 0) {
     return NextResponse.json({ error: "At least one roster row is required" }, { status: 400 });
   }
 
   try {
-    await addRosterRows(slug, rows);
+    await addRosterRows(slug, rows, folderId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[teams/roster] add failed:", error);

@@ -11,7 +11,11 @@ function slugify(name: string): string {
   );
 }
 
-export async function createTeam(name: string, rows: RosterRow[]): Promise<{ slug: string }> {
+export async function createTeam(
+  name: string,
+  rows: RosterRow[],
+  driveFolderId?: string | null,
+): Promise<{ slug: string }> {
   const admin = createAdminClient();
   const baseSlug = slugify(name);
   let slug = baseSlug;
@@ -21,22 +25,33 @@ export async function createTeam(name: string, rows: RosterRow[]): Promise<{ slu
     slug = `${baseSlug}-${n}`;
   }
 
-  const { error } = await admin.from("teams").insert({ name: name.trim(), slug });
+  const { error } = await admin
+    .from("teams")
+    .insert({ name: name.trim(), slug, drive_folder_id: driveFolderId ?? null });
   if (error) throw error;
 
-  await addRosterRows(slug, rows);
+  await addRosterRows(slug, rows, driveFolderId);
   return { slug };
 }
 
-export async function addRosterRows(teamSlug: string, rows: RosterRow[]): Promise<void> {
-  if (rows.length === 0) return;
+export async function addRosterRows(teamSlug: string, rows: RosterRow[], driveFolderId?: string | null): Promise<void> {
   const admin = createAdminClient();
   const { data: team, error: teamError } = await admin
     .from("teams")
-    .select("id")
+    .select("id, drive_folder_id")
     .eq("slug", teamSlug)
     .maybeSingle();
   if (teamError || !team) throw teamError ?? new Error("Team not found");
+
+  // First Drive-sourced pick wins — if a team was created from a CSV (no
+  // folder yet) and someone later adds to the roster by picking from
+  // Drive, that becomes the reports folder. If one's already set, a later
+  // pick never silently redirects where reports land.
+  if (driveFolderId && !team.drive_folder_id) {
+    await admin.from("teams").update({ drive_folder_id: driveFolderId }).eq("id", team.id);
+  }
+
+  if (rows.length === 0) return;
 
   // Upsert, not insert — re-uploading a corrected sheet updates existing
   // rows instead of erroring on the unique(team_id, email) constraint, and
