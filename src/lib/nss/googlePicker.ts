@@ -58,7 +58,10 @@ declare global {
   }
 }
 
-const SCOPE = "https://www.googleapis.com/auth/drive.file";
+// drive.file covers the Picker itself and the parent-folder lookup;
+// reading the sheet's actual cell values goes through the separate Sheets
+// API, which needs its own scope — drive.file alone isn't honored there.
+const SCOPE = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets.readonly";
 
 function loadScript(src: string): Promise<void> {
   return new Promise((resolve, reject) => {
