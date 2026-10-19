@@ -38,7 +38,10 @@ export async function createTeam(name: string, rows: RosterRow[], drive?: DriveS
   return { slug };
 }
 
-export async function addRosterRows(teamSlug: string, rows: RosterRow[], drive?: DriveSource): Promise<void> {
+// Only called from createTeam now — the standalone "add more people by
+// picking another sheet" admin action was removed once resync covered the
+// same need (new rows in the same tracked sheet) more consistently.
+async function addRosterRows(teamSlug: string, rows: RosterRow[], drive?: DriveSource): Promise<void> {
   const admin = createAdminClient();
   const { data: team, error: teamError } = await admin
     .from("teams")

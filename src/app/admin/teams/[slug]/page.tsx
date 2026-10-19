@@ -2,13 +2,13 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, ShieldAlert, Send, Check, FileText, BarChart3, FileSpreadsheet, RotateCw, AlertTriangle } from "lucide-react";
+import { Loader2, ShieldAlert, Send, Check, FileText, BarChart3, RotateCw, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, listAllProfiles } from "@/lib/nss/userProfiles";
 import { buildFullName } from "@/lib/nss/reportFilename";
 import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
-import { rosterRowsFromGrid, type RosterRow } from "@/lib/nss/rosterCsv";
-import { pickRosterFromGoogleSheets, fetchRosterGridForSpreadsheet } from "@/lib/nss/googlePicker";
+import { rosterRowsFromGrid } from "@/lib/nss/rosterCsv";
+import { fetchRosterGridForSpreadsheet } from "@/lib/nss/googlePicker";
 import GlobalHeader from "@/components/GlobalHeader";
 
 interface Team {
@@ -55,13 +55,6 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
   const [profiles, setProfiles] = useState<Record<string, { first_name: string | null; last_name: string | null }>>({});
 
   const [sendState, setSendState] = useState<Record<string, SendState>>({});
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [newRows, setNewRows] = useState<RosterRow[]>([]);
-  const [newFolderId, setNewFolderId] = useState<string | null>(null);
-  const [newSpreadsheetId, setNewSpreadsheetId] = useState<string | null>(null);
-  const [parseErrors, setParseErrors] = useState<string[]>([]);
-  const [adding, setAdding] = useState(false);
-  const [pickingFromDrive, setPickingFromDrive] = useState(false);
   const [resyncing, setResyncing] = useState(false);
   const [resyncResult, setResyncResult] = useState<string | null>(null);
   const [resyncError, setResyncError] = useState<string | null>(null);
@@ -162,47 +155,6 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     const pending = roster.filter((r) => !r.invited_at);
     for (const entry of pending) {
       await sendInvite(entry);
-    }
-  };
-
-  const handlePickFromDrive = async () => {
-    setPickingFromDrive(true);
-    setParseErrors([]);
-    try {
-      const result = await pickRosterFromGoogleSheets();
-      if (!result) return;
-      const { rows, errors } = rosterRowsFromGrid(result.grid);
-      setFileName(result.fileName);
-      setNewRows(rows);
-      setNewFolderId(result.folderId);
-      setNewSpreadsheetId(result.spreadsheetId);
-      setParseErrors(errors);
-    } catch (err) {
-      setParseErrors([err instanceof Error ? err.message : "Could not load that spreadsheet."]);
-    } finally {
-      setPickingFromDrive(false);
-    }
-  };
-
-  const handleAddRows = async () => {
-    if (!team || newRows.length === 0) return;
-    setAdding(true);
-    try {
-      const res = await fetch(`/api/nss/teams/${team.slug}/roster`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: newRows, folderId: newFolderId, spreadsheetId: newSpreadsheetId }),
-      });
-      if (res.ok) {
-        setFileName(null);
-        setNewRows([]);
-        setNewFolderId(null);
-        setNewSpreadsheetId(null);
-        setParseErrors([]);
-        await loadRoster(team.id);
-      }
-    } finally {
-      setAdding(false);
     }
   };
 
@@ -362,39 +314,6 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                       })}
                     </tbody>
                   </table>
-                </div>
-
-                <div className="bg-card border border-border/50 rounded-2xl p-5">
-                  <h3 className="font-heading text-sm font-semibold text-foreground mb-3">Add more people</h3>
-                  <button
-                    type="button"
-                    onClick={handlePickFromDrive}
-                    disabled={pickingFromDrive}
-                    className="flex items-center gap-2 h-10 px-3 rounded-lg border border-dashed border-border/50 text-sm text-muted-foreground hover:bg-background transition-colors disabled:opacity-50 w-full mb-2"
-                  >
-                    {pickingFromDrive ? (
-                      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                    ) : (
-                      <FileSpreadsheet className="w-4 h-4 shrink-0" />
-                    )}
-                    {fileName ?? "Select roster sheet from Drive"}
-                  </button>
-                  {parseErrors.length > 0 && (
-                    <ul className="text-xs text-destructive mb-2 list-disc pl-4">
-                      {parseErrors.map((err, i) => (
-                        <li key={i}>{err}</li>
-                      ))}
-                    </ul>
-                  )}
-                  {newRows.length > 0 && (
-                    <button
-                      onClick={handleAddRows}
-                      disabled={adding}
-                      className="h-9 px-3 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-                    >
-                      {adding ? "Adding..." : `Add ${newRows.length} ${newRows.length === 1 ? "person" : "people"}`}
-                    </button>
-                  )}
                 </div>
               </div>
             )}
