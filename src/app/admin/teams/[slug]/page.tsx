@@ -307,9 +307,9 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                                 </span>
                               )}
                             </td>
-                            <td className="p-3 text-sm text-muted-foreground">{entry.email}</td>
-                            <td className="p-3 text-sm text-muted-foreground">{entry.manager_email}</td>
-                            <td className="p-3 text-sm text-muted-foreground">
+                            <td className="p-3 text-sm text-muted-foreground break-all">{entry.email}</td>
+                            <td className="p-3 text-sm text-muted-foreground break-all">{entry.manager_email}</td>
+                            <td className="p-3 text-sm text-muted-foreground whitespace-nowrap">
                               {entry.invited_at ? `Invited ${formatDate(entry.invited_at)}` : "Not invited"}
                             </td>
                             <td className="p-3">
@@ -317,7 +317,8 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                                 <button
                                   onClick={() => sendInvite(entry)}
                                   disabled={state === "sending"}
-                                  className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
+                                  title={entry.invited_at ? "Resend invite" : "Send invite"}
+                                  className="flex items-center justify-center h-8 w-8 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
                                 >
                                   {state === "sending" ? (
                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -326,13 +327,12 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                                   ) : (
                                     <Send className="w-3.5 h-3.5" />
                                   )}
-                                  {entry.invited_at ? "Resend" : "Invite"}
                                 </button>
                                 <button
                                   onClick={() => handleRemove(entry)}
                                   disabled={removingId === entry.id}
                                   title="Remove from roster"
-                                  className="flex items-center justify-center h-8 w-8 text-muted-foreground border border-border/50 rounded-lg hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors disabled:opacity-50"
+                                  className="flex items-center justify-center h-8 w-8 shrink-0 text-muted-foreground border border-border/50 rounded-lg hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors disabled:opacity-50"
                                 >
                                   {removingId === entry.id ? (
                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
