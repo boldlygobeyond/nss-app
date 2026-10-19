@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, ShieldAlert, Users, Upload, Check } from "lucide-react";
+import { Loader2, ShieldAlert, Users, Upload, Check, FileSpreadsheet } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile } from "@/lib/nss/userProfiles";
-import { parseRosterCsv, type RosterRow } from "@/lib/nss/rosterCsv";
+import { parseRosterCsv, rosterRowsFromGrid, type RosterRow } from "@/lib/nss/rosterCsv";
+import { pickRosterFromGoogleSheets } from "@/lib/nss/googlePicker";
 import GlobalHeader from "@/components/GlobalHeader";
 
 interface TeamRow {
@@ -27,6 +28,7 @@ export default function TeamsPage() {
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [pickingFromDrive, setPickingFromDrive] = useState(false);
 
   const loadTeams = async () => {
     const supabase = createClient();
@@ -65,6 +67,23 @@ export default function TeamsPage() {
     setFileName(file.name);
     setRows(parsed);
     setParseErrors(errors);
+  };
+
+  const handlePickFromDrive = async () => {
+    setPickingFromDrive(true);
+    setParseErrors([]);
+    try {
+      const result = await pickRosterFromGoogleSheets();
+      if (!result) return; // user closed the picker without choosing anything
+      const { rows: parsed, errors } = rosterRowsFromGrid(result.grid);
+      setFileName(result.fileName);
+      setRows(parsed);
+      setParseErrors(errors);
+    } catch (err) {
+      setParseErrors([err instanceof Error ? err.message : "Could not load that spreadsheet."]);
+    } finally {
+      setPickingFromDrive(false);
+    }
   };
 
   const handleCreate = async () => {
@@ -125,19 +144,37 @@ export default function TeamsPage() {
                 onChange={(e) => setName(e.target.value)}
               />
 
-              <label className="flex items-center gap-2 h-10 px-3 rounded-lg border border-dashed border-border/50 text-sm text-muted-foreground cursor-pointer hover:bg-background transition-colors mb-2">
-                <Upload className="w-4 h-4 shrink-0" />
-                {fileName ?? "Upload roster CSV (first_name, last_name, email, manager_email)"}
-                <input
-                  type="file"
-                  accept=".csv,text/csv"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleFile(file);
-                  }}
-                />
-              </label>
+              <div className="flex items-stretch gap-2 mb-2">
+                <label className="flex-1 flex items-center gap-2 h-10 px-3 rounded-lg border border-dashed border-border/50 text-sm text-muted-foreground cursor-pointer hover:bg-background transition-colors">
+                  <Upload className="w-4 h-4 shrink-0" />
+                  {fileName ?? "Upload roster CSV"}
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleFile(file);
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={handlePickFromDrive}
+                  disabled={pickingFromDrive}
+                  className="flex items-center gap-2 h-10 px-3 rounded-lg border border-border/50 text-sm text-muted-foreground hover:bg-background transition-colors disabled:opacity-50 whitespace-nowrap"
+                >
+                  {pickingFromDrive ? (
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                  ) : (
+                    <FileSpreadsheet className="w-4 h-4 shrink-0" />
+                  )}
+                  Select from Drive
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground mb-2">
+                Columns: first_name, last_name, email, manager_email (a few header spellings are fine).
+              </p>
 
               {parseErrors.length > 0 && (
                 <ul className="text-xs text-destructive mb-2 list-disc pl-4">

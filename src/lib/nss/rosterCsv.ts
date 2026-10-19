@@ -57,10 +57,17 @@ const HEADER_ALIASES: Record<keyof RosterRow, string[]> = {
 };
 
 export function parseRosterCsv(text: string): { rows: RosterRow[]; errors: string[] } {
-  const lines = parseCsvLines(text.trim());
-  if (lines.length === 0) return { rows: [], errors: ["The file is empty."] };
+  return rosterRowsFromGrid(parseCsvLines(text.trim()));
+}
 
-  const header = lines[0].map((h) => h.trim().toLowerCase());
+// Same validation/column-matching as parseRosterCsv, but for data that's
+// already a 2D array — what the Google Sheets API returns directly, no CSV
+// text involved, so the "select from Drive" path reuses every rule here
+// (required columns, blank/invalid-email handling) instead of duplicating it.
+export function rosterRowsFromGrid(lines: string[][]): { rows: RosterRow[]; errors: string[] } {
+  if (lines.length === 0) return { rows: [], errors: ["The sheet is empty."] };
+
+  const header = lines[0].map((h) => (h ?? "").trim().toLowerCase());
   const colIndex = {} as Record<keyof RosterRow, number>;
   const missing: string[] = [];
   (Object.keys(HEADER_ALIASES) as (keyof RosterRow)[]).forEach((key) => {
