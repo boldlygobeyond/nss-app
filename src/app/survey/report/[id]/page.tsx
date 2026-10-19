@@ -25,6 +25,7 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
   const [isReportReady, setIsReportReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusIndex, setStatusIndex] = useState(0);
+  const [isTeam, setIsTeam] = useState(false);
 
   useEffect(() => {
     if (isReportReady) return;
@@ -41,6 +42,7 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
       const supabase = createClient();
       const submission = await getSubmission(supabase, id);
       if (cancelled) return;
+      setIsTeam(!!submission?.team);
 
       if (submission?.report_data) {
         setIsReportReady(true);
@@ -108,7 +110,12 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
       <div className="flex-1 max-w-3xl w-full mx-auto px-6 py-16">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
           <MissionControlPitch
-            headline="Your personal needs report is generating, but that's just the beginning."
+            simple={isTeam}
+            headline={
+              isTeam
+                ? "Your Needs Signal Report is generating, but it's just one small piece of our Mission Control System."
+                : "Your personal needs report is generating, but that's just the beginning."
+            }
             cta={
               <>
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -119,12 +126,14 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
                   >
                     {isReportReady ? "View My Report" : "Compiling your profile..."}
                   </button>
-                  <button
-                    onClick={handleScheduleCall}
-                    className="h-12 px-8 text-base rounded-lg border-2 border-primary text-primary hover:bg-primary/10 transition-colors"
-                  >
-                    Get Your Team&apos;s Customized Flight Plan!
-                  </button>
+                  {!isTeam && (
+                    <button
+                      onClick={handleScheduleCall}
+                      className="h-12 px-8 text-base rounded-lg border-2 border-primary text-primary hover:bg-primary/10 transition-colors"
+                    >
+                      Get Your Team&apos;s Customized Flight Plan!
+                    </button>
+                  )}
                 </div>
                 {error && (
                   <p className="text-destructive text-sm mt-4">
