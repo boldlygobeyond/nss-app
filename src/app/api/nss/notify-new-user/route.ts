@@ -35,6 +35,7 @@ export async function POST(request: Request) {
       lastName: record.last_name ?? "",
       email: record.email,
       sourceParam: record.lead_source,
+      team: record.team,
     }),
   ]);
 

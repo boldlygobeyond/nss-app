@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
+import { getMyProfile } from "@/lib/nss/userProfiles";
 import { fetchQuestions, type SurveyQuestion } from "@/lib/nss/questions";
 import {
   buildCalibrationSequence,
@@ -144,6 +145,7 @@ export default function SurveyClient() {
   const [questions, setQuestions] = useState<SurveyQuestion[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userTeam, setUserTeam] = useState<string | null>(null);
 
   const [greetingStep, setGreetingStep] = useState(0);
   const [userName, setUserName] = useState("");
@@ -234,6 +236,15 @@ export default function SurveyClient() {
       setUserId(uid);
       setUserEmail(userData.user?.email ?? null);
       setQuestions(qs);
+
+      if (uid) {
+        // Denormalized onto the submission at creation time below, same
+        // reasoning as user_email/respondent_name — every downstream check
+        // (CRM suppression, branding) reads the submission's own copy
+        // rather than joining back to user_profiles each time.
+        const profile = await getMyProfile(supabase, uid).catch(() => null);
+        if (!cancelled) setUserTeam(profile?.team ?? null);
+      }
 
       // The server's own record of this user's in-progress submission (if
       // any) is the source of truth for *whose* progress this is —
@@ -384,6 +395,7 @@ export default function SurveyClient() {
           pronouns,
           initialTally: freshTally,
           questionSequence: calibration.map((q) => q.id),
+          team: userTeam,
         });
         setSubmissionId(result.id);
       } catch {

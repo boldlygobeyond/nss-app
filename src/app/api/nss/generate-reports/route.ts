@@ -206,6 +206,7 @@ export async function POST(request: Request) {
               lastName: profile?.last_name || "",
               email: submission.user_email as string,
               reportUrl: archived.pdfUrl,
+              team: submission.team as string | null,
             }),
             ...(isNonLeadEmail(submission.user_email as string)
               ? []

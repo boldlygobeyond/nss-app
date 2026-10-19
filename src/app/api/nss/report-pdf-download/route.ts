@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   const admin = createAdminClient();
   const { data: submission, error } = await admin
     .from("nss_submissions")
-    .select("id, user_id, user_email, respondent_name, updated_at, pdf_download_token, pdf_email_downloaded_at")
+    .select("id, user_id, user_email, respondent_name, updated_at, pdf_download_token, pdf_email_downloaded_at, team")
     .eq("id", submissionId)
     .maybeSingle();
 
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
     const lastName = profile?.last_name || "";
     const email = submission.user_email as string;
     after(() =>
-      notifyCrmLead({ firstName, lastName, email, reportEmailDownloadedAt: downloadedAt }).catch(
+      notifyCrmLead({ firstName, lastName, email, reportEmailDownloadedAt: downloadedAt, team: submission.team as string | null }).catch(
         (crmError) => console.warn("[report-pdf-download] CRM notify failed:", crmError),
       ),
     );

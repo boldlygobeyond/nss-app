@@ -75,7 +75,7 @@ export async function GET(request: Request) {
       // risking the function terminating mid-fetch on a bare
       // fire-and-forget call.
       after(() =>
-        notifyCrmLead({ firstName, lastName, email, reportPortalDownloadedAt: downloadedAt }).catch(
+        notifyCrmLead({ firstName, lastName, email, reportPortalDownloadedAt: downloadedAt, team: submission.team }).catch(
           (crmError) => console.warn("[generate-pdf] CRM notify failed:", crmError),
         ),
       );

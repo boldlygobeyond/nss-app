@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { Loader2, FileText, Users, Files, Settings, RefreshCw, BarChart3, type LucideIcon } from "lucide-react";
+import { Loader2, FileText, Users, Files, Settings, RefreshCw, BarChart3, UserPlus, type LucideIcon } from "lucide-react";
 import { sendGAEvent } from "@next/third-parties/google";
 import { createClient } from "@/lib/supabase/client";
 import { listSubmissionsForUser } from "@/lib/nss/api";
@@ -144,6 +144,12 @@ function AdminHomescreen({
       label: "Question Stats",
       description: "It-depends and skip counts for every question.",
       icon: BarChart3,
+    },
+    isAdmin && {
+      href: "/admin/team-invites",
+      label: "Team Invites",
+      description: "Invite pilot/team members directly, outside the lead funnel.",
+      icon: UserPlus,
     },
   ].filter((c): c is { href: string; label: string; description: string; icon: LucideIcon } => !!c);
 

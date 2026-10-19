@@ -8,6 +8,7 @@ export interface UserProfile {
   manager_email: string | null;
   role: "user" | "admin";
   lead_source: string | null;
+  team: string | null;
 }
 
 export async function getMyProfile(supabase: SupabaseClient, userId: string): Promise<UserProfile | null> {

@@ -66,10 +66,15 @@ export async function notifyCrmLead(payload: {
   reportEmailDownloadedAt?: string | null;
   reportEmailOpenedAt?: string | null;
   reportEmailClickedAt?: string | null;
+  // Set for a pilot/team invite (src/lib/nss/teamInvite.ts) — those people
+  // were onboarded directly by an admin, not converted from the public
+  // landing page, so they're not a sales lead and shouldn't show up in CRM.
+  team?: string | null;
 }): Promise<void> {
-  // Internal team members and the standing test account aren't leads —
-  // don't clutter the CRM tracking test/dogfooding submissions.
-  if (isNonLeadEmail(payload.email)) {
+  // Internal team members, the standing test account, and pilot/team
+  // members aren't leads — don't clutter the CRM tracking non-funnel
+  // submissions.
+  if (isNonLeadEmail(payload.email) || payload.team) {
     return;
   }
   if (!process.env.CRM_LEAD_INTAKE_API_KEY) {

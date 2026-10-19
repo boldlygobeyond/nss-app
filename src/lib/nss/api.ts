@@ -23,6 +23,7 @@ export interface NssSubmission {
   pdf_portal_downloaded_at: string | null;
   email_opened_at: string | null;
   email_clicked_at: string | null;
+  team: string | null;
   updated_at: string;
 }
 
@@ -64,6 +65,7 @@ export async function createSubmission(
     pronouns: string;
     initialTally: Tally;
     questionSequence: number[];
+    team?: string | null;
   },
 ): Promise<NssSubmission> {
   const { data, error } = await supabase
@@ -77,6 +79,7 @@ export async function createSubmission(
       question_sequence: params.questionSequence,
       questions_answered: 0,
       status: "in_progress",
+      team: params.team ?? null,
     })
     .select()
     .single();

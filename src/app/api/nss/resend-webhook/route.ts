@@ -54,7 +54,7 @@ export async function POST(request: Request) {
   const selectColumn = eventType === "email.opened" ? "email_opened_at" : "email_clicked_at";
   const { data: submission } = await admin
     .from("nss_submissions")
-    .select(`id, user_id, user_email, respondent_name, ${selectColumn}`)
+    .select(`id, user_id, user_email, respondent_name, team, ${selectColumn}`)
     .eq("id", submissionId)
     .maybeSingle();
 
@@ -89,6 +89,7 @@ export async function POST(request: Request) {
         firstName,
         lastName,
         email,
+        team: submission.team as string | null,
         ...(eventType === "email.opened"
           ? { reportEmailOpenedAt: touchedAt }
           : { reportEmailClickedAt: touchedAt }),

@@ -7,6 +7,11 @@ const PUBLIC_PATH_PREFIXES = [
   "/auth",
   "/api/nss/notify-new-user",
   "/api/nss/lead-signup",
+  // Pilot/team invite consumption — the recipient isn't logged in yet when
+  // they click this link; it signs them in itself via verifyOtp(). The
+  // route that *sends* this invite (/api/nss/team-invite) stays admin-gated
+  // and off this list on purpose.
+  "/team-invite",
   // The email recipient clicking this link isn't logged in — the
   // pdf_download_token in the URL is its own auth, checked inside the
   // route itself, not via Supabase session.
