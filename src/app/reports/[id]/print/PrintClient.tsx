@@ -100,37 +100,39 @@ export default function PrintClient({ id }: { id: string }) {
           forPdf
         />
 
-        <div className="mt-10 print:mt-0 print:break-before-page">
-          <Image
-            src="/logo/bgb-line-all-color.png"
-            alt="Boldly Go Beyond"
-            width={198}
-            height={20}
-            priority
-            className="hidden print:block mx-auto mb-6"
-          />
-          <ReportClosingPage
-            cta={
-              <div className="flex flex-col items-center gap-3">
-                <a
-                  href={CALENDAR_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="h-12 px-8 text-base rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-md print:shadow-none transition-colors inline-flex items-center justify-center"
-                >
-                  Get Your Team&apos;s Customized Flight Plan!
-                </a>
-                <p className="text-sm text-muted-foreground">
-                  Or reach out to{" "}
-                  <a href={FLIGHT_PLAN_MAILTO} className="text-primary font-medium hover:underline">
-                    {FLIGHT_PLAN_EMAIL}
-                  </a>{" "}
-                  directly to get the conversation started.
-                </p>
-              </div>
-            }
-          />
-        </div>
+        {!submission.team && (
+          <div className="mt-10 print:mt-0 print:break-before-page">
+            <Image
+              src="/logo/bgb-line-all-color.png"
+              alt="Boldly Go Beyond"
+              width={198}
+              height={20}
+              priority
+              className="hidden print:block mx-auto mb-6"
+            />
+            <ReportClosingPage
+              cta={
+                <div className="flex flex-col items-center gap-3">
+                  <a
+                    href={CALENDAR_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="h-12 px-8 text-base rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-md print:shadow-none transition-colors inline-flex items-center justify-center"
+                  >
+                    Get Your Team&apos;s Customized Flight Plan!
+                  </a>
+                  <p className="text-sm text-muted-foreground">
+                    Or reach out to{" "}
+                    <a href={FLIGHT_PLAN_MAILTO} className="text-primary font-medium hover:underline">
+                      {FLIGHT_PLAN_EMAIL}
+                    </a>{" "}
+                    directly to get the conversation started.
+                  </p>
+                </div>
+              }
+            />
+          </div>
+        )}
       </div>
     </div>
   );
