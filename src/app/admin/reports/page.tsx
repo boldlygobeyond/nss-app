@@ -30,6 +30,7 @@ export default function AllUserReportsPage() {
   const [completedAt, setCompletedAt] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [versionFilter, setVersionFilter] = useState<"all" | "v1" | "v2">("all");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "lead" | "team">("all");
 
   useEffect(() => {
     const load = async () => {
@@ -83,6 +84,8 @@ export default function AllUserReportsPage() {
     const q = search.trim().toLowerCase();
     const bySubmission = submissions.filter((s) => {
       if (versionFilter !== "all" && bankVersion(s) !== versionFilter) return false;
+      if (sourceFilter === "lead" && s.team) return false;
+      if (sourceFilter === "team" && !s.team) return false;
       if (!q) return true;
       const profile = profiles[s.user_id];
       const fullName = buildFullName(profile?.first_name, profile?.last_name, s.respondent_name);
@@ -98,7 +101,7 @@ export default function AllUserReportsPage() {
     return Object.entries(byKey)
       .map(([key, records]) => [key, [...records].sort((a, b) => (completedOf(b) > completedOf(a) ? 1 : -1))] as const)
       .sort(([, a], [, b]) => (completedOf(b[0]) > completedOf(a[0]) ? 1 : -1));
-  }, [submissions, profiles, search, versionFilter, completedAt]);
+  }, [submissions, profiles, search, versionFilter, sourceFilter, completedAt]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -135,6 +138,19 @@ export default function AllUserReportsPage() {
                 />
               </div>
               <div className="flex items-center gap-1 bg-card border border-border/50 rounded-lg p-1">
+                {(["all", "lead", "team"] as const).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setSourceFilter(v)}
+                    className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+                      sourceFilter === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"
+                    }`}
+                  >
+                    {v === "all" ? "Leads & teams" : v === "lead" ? "Leads" : "Teams"}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1 bg-card border border-border/50 rounded-lg p-1">
                 {(["all", "v1", "v2"] as const).map((v) => (
                   <button
                     key={v}
@@ -167,6 +183,11 @@ export default function AllUserReportsPage() {
                   </div>
                   <span className="font-semibold text-foreground text-sm">{fullName}</span>
                   <span className="text-xs text-muted-foreground">{email}</span>
+                  {records[0].team && (
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent/10 text-accent">
+                      {records[0].team}
+                    </span>
+                  )}
                 </div>
                 <div className="space-y-2 ml-9">
                   {records.map((s) => (
