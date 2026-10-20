@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, ShieldAlert, Send, Check, FileText, BarChart3, RotateCw, AlertTriangle, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, listAllProfiles } from "@/lib/nss/userProfiles";
@@ -57,12 +58,30 @@ function formatDate(ts: string) {
   return new Date(ts).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
+function isTab(value: string | null): value is Tab {
+  return value === "roster" || value === "reports" || value === "snapshot";
+}
+
 export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const [team, setTeam] = useState<Team | null>(null);
-  const [tab, setTab] = useState<Tab>("roster");
+  // Read from the URL (not just a default) so that navigating away to
+  // Insights/View and hitting Back lands on the tab the link came from,
+  // rather than always resetting to Roster — the tab buttons below keep
+  // this in sync via router.replace as the user clicks between tabs.
+  const [tab, setTab] = useState<Tab>(() => {
+    const fromUrl = searchParams.get("tab");
+    return isTab(fromUrl) ? fromUrl : "roster";
+  });
+
+  const selectTab = (key: Tab) => {
+    setTab(key);
+    router.replace(`/admin/teams/${slug}?tab=${key}`, { scroll: false });
+  };
 
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [reports, setReports] = useState<ReportEntry[]>([]);
@@ -288,7 +307,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
               ] as const).map(([key, label]) => (
                 <button
                   key={key}
-                  onClick={() => setTab(key)}
+                  onClick={() => selectTab(key)}
                   className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
                     tab === key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"
                   }`}
