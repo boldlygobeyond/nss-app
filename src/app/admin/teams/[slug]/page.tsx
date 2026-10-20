@@ -16,6 +16,7 @@ interface Team {
   name: string;
   slug: string;
   drive_spreadsheet_id: string | null;
+  drive_folder_id: string | null;
 }
 
 interface RosterEntry {
@@ -152,7 +153,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
 
       const { data: teamRow } = await supabase
         .from("teams")
-        .select("id, name, slug, drive_spreadsheet_id")
+        .select("id, name, slug, drive_spreadsheet_id, drive_folder_id")
         .eq("slug", slug)
         .maybeSingle();
       if (!teamRow) {
@@ -218,7 +219,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     setResyncResult(null);
     setResyncError(null);
     try {
-      const grid = await fetchRosterGridForSpreadsheet(team.drive_spreadsheet_id);
+      const { grid, folderId } = await fetchRosterGridForSpreadsheet(team.drive_spreadsheet_id);
       const { rows, errors } = rosterRowsFromGrid(grid);
       if (errors.length > 0) {
         setResyncError(errors.join(" "));
@@ -227,7 +228,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
       const res = await fetch(`/api/nss/teams/${team.slug}/resync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows }),
+        body: JSON.stringify({ rows, folderId }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -240,6 +241,13 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
         result.missing > 0 && `${result.missing} no longer in the sheet`,
       ].filter(Boolean);
       setResyncResult(parts.length > 0 ? parts.join(", ") : "No changes — roster already matches the sheet.");
+      // Picks up a freshly backfilled drive_folder_id too, not just the roster.
+      const { data: refreshedTeam } = await createClient()
+        .from("teams")
+        .select("id, name, slug, drive_spreadsheet_id, drive_folder_id")
+        .eq("slug", team.slug)
+        .maybeSingle();
+      if (refreshedTeam) setTeam(refreshedTeam);
       await loadRoster(team.id);
     } catch (err) {
       setResyncError(err instanceof Error ? err.message : "Could not resync from the sheet.");

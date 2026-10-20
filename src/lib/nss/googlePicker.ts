@@ -151,13 +151,24 @@ async function fetchSheetGrid(spreadsheetId: string, accessToken: string): Promi
   return values.values ?? [];
 }
 
+// Non-fatal if this fails — the rest of the pick (roster rows) still works
+// without a folder id, it just means reports fall back to the default
+// archive location instead of landing next to the sheet. But a silent
+// `return null` here left that failure completely invisible, so it's
+// logged loudly enough to actually debug if it happens again.
 async function fetchParentFolderId(fileId: string, accessToken: string): Promise<string | null> {
   const res = await fetch(
     `https://www.googleapis.com/drive/v3/files/${fileId}?fields=parents&supportsAllDrives=true`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.error("[googlePicker] parent folder lookup failed:", res.status, await res.text().catch(() => ""));
+    return null;
+  }
   const data = (await res.json()) as { parents?: string[] };
+  if (!data.parents?.[0]) {
+    console.error("[googlePicker] parent folder lookup returned no parents:", JSON.stringify(data));
+  }
   return data.parents?.[0] ?? null;
 }
 
@@ -178,8 +189,17 @@ export async function pickRosterFromGoogleSheets(): Promise<
 // Re-reads a sheet already picked earlier (its id stored on the team) —
 // used by "resync from sheet," which shouldn't make the admin pick the
 // file again just to pull in corrections someone made since the last sync.
-export async function fetchRosterGridForSpreadsheet(spreadsheetId: string): Promise<string[][]> {
+// Also re-attempts the folder lookup, so a team whose folder capture
+// failed on the original pick (see fetchParentFolderId above) gets a
+// chance to pick it up on the next resync instead of being stuck.
+export async function fetchRosterGridForSpreadsheet(
+  spreadsheetId: string,
+): Promise<{ grid: string[][]; folderId: string | null }> {
   await loadGoogleScripts();
   const accessToken = await requestAccessToken();
-  return fetchSheetGrid(spreadsheetId, accessToken);
+  const [grid, folderId] = await Promise.all([
+    fetchSheetGrid(spreadsheetId, accessToken),
+    fetchParentFolderId(spreadsheetId, accessToken),
+  ]);
+  return { grid, folderId };
 }

@@ -12,13 +12,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: admin.status });
 
   const { slug } = await params;
-  const { rows } = (await request.json()) as { rows?: RosterRow[] };
+  const { rows, folderId } = (await request.json()) as { rows?: RosterRow[]; folderId?: string | null };
   if (!Array.isArray(rows)) {
     return NextResponse.json({ error: "Roster rows are required" }, { status: 400 });
   }
 
   try {
-    const result = await resyncRosterFromSheet(slug, rows);
+    const result = await resyncRosterFromSheet(slug, rows, folderId);
     return NextResponse.json(result);
   } catch (error) {
     console.error("[teams/resync] failed:", error);

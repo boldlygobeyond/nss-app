@@ -92,14 +92,23 @@ async function addRosterRows(teamSlug: string, rows: RosterRow[], drive?: DriveS
 export async function resyncRosterFromSheet(
   teamSlug: string,
   rows: RosterRow[],
+  folderId?: string | null,
 ): Promise<{ added: number; updated: number; missing: number }> {
   const admin = createAdminClient();
   const { data: team, error: teamError } = await admin
     .from("teams")
-    .select("id")
+    .select("id, drive_folder_id")
     .eq("slug", teamSlug)
     .maybeSingle();
   if (teamError || !team) throw teamError ?? new Error("Team not found");
+
+  // Backfill a folder id that failed to capture on the original pick (see
+  // fetchParentFolderId in googlePicker.ts) — this is the only other place
+  // a team's folder can get set now that "add more people" is gone, so a
+  // team stuck without one would otherwise have no way to recover it.
+  if (folderId && !team.drive_folder_id) {
+    await admin.from("teams").update({ drive_folder_id: folderId }).eq("id", team.id);
+  }
 
   const { data: existingRows } = await admin.from("team_roster").select("email").eq("team_id", team.id);
   const existingEmails = new Set((existingRows ?? []).map((r) => r.email));
