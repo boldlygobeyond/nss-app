@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState, use } from "react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getSubmission, type NssSubmission } from "@/lib/nss/api";
 import { getMyProfile } from "@/lib/nss/userProfiles";
@@ -11,6 +13,7 @@ import ReportView from "@/components/reports/ReportView";
 
 export default function ReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const [submission, setSubmission] = useState<NssSubmission | null>(null);
   const [fullName, setFullName] = useState<string | null>(null);
   const [isOwner, setIsOwner] = useState(false);
@@ -163,6 +166,13 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
         </div>
       ) : (
         <div className="max-w-3xl mx-auto w-full px-6 py-8">
+          <button
+            onClick={() => router.back()}
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> Back
+          </button>
+
           <div className="mb-8">
             <h1 className="font-heading text-2xl md:text-3xl font-bold text-foreground">Needs Signal Report</h1>
             <div className="flex items-baseline justify-between mt-1 mb-4">

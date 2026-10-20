@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, ShieldAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile } from "@/lib/nss/userProfiles";
@@ -58,6 +58,7 @@ function JourneyCell({
 
 export default function InsightsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const [data, setData] = useState<InsightsData | null>(null);
@@ -189,12 +190,12 @@ export default function InsightsPage({ params }: { params: Promise<{ id: string 
     <div className="min-h-screen bg-background flex flex-col">
       <GlobalHeader />
       <div className="max-w-4xl mx-auto px-6 py-12 w-full">
-        <Link
-          href="/admin/reports"
+        <button
+          onClick={() => router.back()}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> All User Reports
-        </Link>
+          <ArrowLeft className="w-3.5 h-3.5" /> Back
+        </button>
 
         <p className="text-xs font-semibold tracking-wide uppercase text-primary mb-1">Insights · under the hood</p>
         <h1 className="font-heading text-2xl font-bold text-foreground mb-1">{data.respondentName}&apos;s journey</h1>
