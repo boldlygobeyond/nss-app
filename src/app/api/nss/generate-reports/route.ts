@@ -190,9 +190,19 @@ export async function POST(request: Request) {
             teamFolderId = teamRow?.drive_folder_id ?? null;
           }
 
+          const { data: profile } = await supabase
+            .from("user_profiles")
+            .select("first_name, last_name")
+            .eq("id", submission.user_id)
+            .maybeSingle();
+          const fullName = [profile?.first_name || firstName, profile?.last_name].filter(Boolean).join(" ");
+
           const archived = await archiveReportToDrive({
             userEmail: submission.user_email as string,
             pdfBuffer,
+            firstName: profile?.first_name,
+            lastName: profile?.last_name,
+            respondentName: submission.respondent_name as string,
             teamFolderId,
           });
           const pdfDownloadToken = randomBytes(24).toString("hex");
@@ -204,13 +214,6 @@ export async function POST(request: Request) {
               pdf_download_token: pdfDownloadToken,
             })
             .eq("id", submissionId);
-
-          const { data: profile } = await supabase
-            .from("user_profiles")
-            .select("first_name, last_name")
-            .eq("id", submission.user_id)
-            .maybeSingle();
-          const fullName = [profile?.first_name || firstName, profile?.last_name].filter(Boolean).join(" ");
 
           await Promise.allSettled([
             // notifyCrmLead already skips internal/test-account emails itself.

@@ -23,3 +23,20 @@ export function buildReportFileName(
     .replace(/\//g, "-");
   return `${name} - Needs Signal Report ${dateStr}`;
 }
+
+// Google Drive archival's own naming convention — date-first so files sort
+// chronologically in a folder listing, distinct from buildReportFileName
+// above (what a respondent sees when they download their own PDF directly,
+// never changed by this request).
+export function buildDriveFileName(
+  firstName: string | null | undefined,
+  lastName: string | null | undefined,
+  fallbackName: string,
+  date: string,
+): string {
+  const name = buildFullName(firstName, lastName, fallbackName);
+  const dateStr = new Date(date)
+    .toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" })
+    .replace(/\//g, "-");
+  return `${dateStr} ${name} Needs Signal Report`;
+}

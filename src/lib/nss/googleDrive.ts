@@ -5,6 +5,7 @@
 // download (see pdfRender.ts), not a separate simplified copy.
 
 import { google } from "googleapis";
+import { buildDriveFileName } from "./reportFilename";
 
 function getDriveClient() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -76,6 +77,12 @@ async function uploadPdf(
 export async function archiveReportToDrive(params: {
   userEmail: string;
   pdfBuffer: Buffer;
+  // Name fields for the filename only — the per-user default folder (below)
+  // still keys on email, unaffected by this; respondentName is the
+  // fallback when there's no profile first/last name yet.
+  firstName?: string | null;
+  lastName?: string | null;
+  respondentName: string;
   // A team's designated client folder (teams.drive_folder_id, captured
   // when its roster was picked from Drive) — when set, the report lands
   // in an "NSS Reports" subfolder inside it instead of the default
@@ -87,7 +94,6 @@ export async function archiveReportToDrive(params: {
   if (!driveId) throw new Error("GOOGLE_DRIVE_ID is not configured");
 
   const drive = getDriveClient();
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
   const targetFolderId = params.teamFolderId
     ? await findOrCreateFolder(drive, "NSS Reports", params.teamFolderId, driveId)
@@ -98,7 +104,8 @@ export async function archiveReportToDrive(params: {
         driveId,
       );
 
-  const file = await uploadPdf(drive, `${params.userEmail}_${timestamp}_NSS_Report.pdf`, params.pdfBuffer, targetFolderId);
+  const fileName = buildDriveFileName(params.firstName, params.lastName, params.respondentName, new Date().toISOString());
+  const file = await uploadPdf(drive, `${fileName}.pdf`, params.pdfBuffer, targetFolderId);
 
   return { pdfUrl: file.url, pdfDriveId: file.id };
 }
