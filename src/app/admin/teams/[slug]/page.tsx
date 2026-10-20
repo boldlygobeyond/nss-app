@@ -188,6 +188,12 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
   }, [slug]);
 
   const sendInvite = async (entry: RosterEntry) => {
+    if (entry.invited_at) {
+      const confirmed = window.confirm(
+        `${entry.first_name} ${entry.last_name} was already invited on ${formatDate(entry.invited_at)}. Send the invite again?`,
+      );
+      if (!confirmed) return;
+    }
     setSendState((s) => ({ ...s, [entry.id]: "sending" }));
     const res = await fetch("/api/nss/team-invite", {
       method: "POST",
