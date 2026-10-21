@@ -21,6 +21,11 @@ import { buildFullName } from "@/lib/nss/reportFilename";
 import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import { rosterRowsFromGrid } from "@/lib/nss/rosterCsv";
 import { fetchRosterGridForSpreadsheet } from "@/lib/nss/googlePicker";
+import type { ClusterKey } from "@/lib/nss/clusters";
+import type { BtResponse } from "@/lib/nss/bradleyTerry";
+import { computeTeamMemberScores, computeTeamRowOrder, type TeamMemberScore } from "@/lib/nss/teamScores";
+import TeamNeedsHeatmap from "@/components/teams/TeamNeedsHeatmap";
+import NeedsSpectrum from "@/components/teams/NeedsSpectrum";
 import GlobalHeader from "@/components/GlobalHeader";
 
 interface Team {
@@ -232,6 +237,12 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
   const [profiles, setProfiles] = useState<Record<string, { first_name: string | null; last_name: string | null }>>({});
   const [nssStatusByEmail, setNssStatusByEmail] = useState<Record<string, string>>({});
 
+  const [snapshotScores, setSnapshotScores] = useState<TeamMemberScore[] | null>(null);
+  // A ref, not state — setting it is a duplicate-fetch guard the effect
+  // below reads synchronously, not something the UI renders from (that's
+  // snapshotScores === null), so it doesn't need to trigger a re-render.
+  const snapshotLoadingRef = useRef(false);
+
   const [sendState, setSendState] = useState<Record<string, SendState>>({});
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [resyncing, setResyncing] = useState(false);
@@ -318,6 +329,61 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     setProfiles(Object.fromEntries(allProfiles.map((p) => [p.id, p])));
   };
 
+  // Deliberately lazy (only runs once the Snapshot tab is first opened,
+  // not on every workspace load) — it pulls every pairwise answer for
+  // every completed submission on the team just to refit Bradley-Terry
+  // client-side per person, which the Roster/Reports tabs have no need for.
+  const loadSnapshot = async (completed: ReportEntry[]) => {
+    snapshotLoadingRef.current = true;
+    try {
+      if (completed.length === 0) {
+        setSnapshotScores([]);
+        return;
+      }
+      const supabase = createClient();
+      const ids = completed.map((r) => r.id);
+      const allResponses = await fetchAllRows<{
+        submission_id: string;
+        chosen_clusters: ClusterKey[];
+        rejected_clusters: ClusterKey[];
+      }>((from, to) =>
+        supabase
+          .from("nss_responses")
+          .select("submission_id, chosen_clusters, rejected_clusters")
+          .in("submission_id", ids)
+          .order("id")
+          .range(from, to),
+      );
+      const bySubmission = new Map<string, BtResponse[]>();
+      allResponses.forEach((r) => {
+        const list = bySubmission.get(r.submission_id) ?? [];
+        list.push({ chosen_clusters: r.chosen_clusters, rejected_clusters: r.rejected_clusters });
+        bySubmission.set(r.submission_id, list);
+      });
+
+      const members = completed
+        .map((r) => {
+          const responses = bySubmission.get(r.id) ?? [];
+          if (responses.length === 0) return null;
+          const profile = profiles[r.user_id];
+          const fullName = buildFullName(profile?.first_name, profile?.last_name, r.respondent_name);
+          const [firstName, ...rest] = fullName.split(" ");
+          return {
+            userId: r.user_id,
+            submissionId: r.id,
+            firstName: firstName || fullName,
+            lastName: rest.join(" "),
+            responses,
+          };
+        })
+        .filter((m): m is NonNullable<typeof m> => m !== null);
+
+      setSnapshotScores(computeTeamMemberScores(members));
+    } finally {
+      snapshotLoadingRef.current = false;
+    }
+  };
+
   function nssStatusFor(email: string): NssStatus {
     const raw = nssStatusByEmail[email.toLowerCase()];
     if (raw === "completed" || raw === "report_generated") return "complete";
@@ -358,6 +424,12 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
+
+  useEffect(() => {
+    if (tab !== "snapshot" || loading || snapshotScores !== null || snapshotLoadingRef.current) return;
+    loadSnapshot(reports.filter((r) => !!r.completedAt));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, loading, reports, snapshotScores]);
 
   const sendInvite = async (entry: RosterEntry) => {
     if (entry.invited_at) {
@@ -661,10 +733,72 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
             )}
 
             {tab === "snapshot" && (
-              <div className="bg-card border border-border/50 rounded-2xl p-10 text-center">
-                <BarChart3 className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-40" />
-                <p className="text-foreground text-sm font-medium mb-1">Team Snapshot — coming soon</p>
-                <p className="text-muted-foreground text-sm">Still designing this view.</p>
+              <div>
+                {(() => {
+                  const invitedCount = roster.filter((r) => !!r.invited_at).length;
+                  return (
+                    <p className="text-xs text-muted-foreground mb-4">
+                      {reports.length} of {invitedCount} invited team member{invitedCount === 1 ? "" : "s"} have
+                      completed the NSS so far.
+                    </p>
+                  );
+                })()}
+
+                {snapshotScores === null ? (
+                  <div className="flex items-center justify-center min-h-[20vh]">
+                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : snapshotScores.length === 0 ? (
+                  <div className="bg-card border border-border/50 rounded-2xl p-10 text-center">
+                    <BarChart3 className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+                    <p className="text-foreground text-sm font-medium mb-1">No completed surveys yet</p>
+                    <p className="text-muted-foreground text-sm">
+                      Once team members complete the NSS, their needs profile will appear here.
+                    </p>
+                  </div>
+                ) : (
+                  (() => {
+                    const rowOrder = computeTeamRowOrder(snapshotScores);
+                    return (
+                      <div className="space-y-10">
+                        <p className="text-sm text-muted-foreground max-w-2xl">
+                          Darker colors and dots farther to the right indicate needs that emerged as stronger
+                          priorities for that person when compared with their other needs. Lighter colors and dots
+                          farther left indicate relatively lower priorities — not needs that are unimportant.
+                        </p>
+                        {snapshotScores.length === 1 && (
+                          <p className="text-xs text-muted-foreground -mt-7">
+                            With only one completed survey so far, this shows that person&apos;s own profile — team
+                            patterns will become clearer as more people complete the NSS.
+                          </p>
+                        )}
+
+                        <div>
+                          <h2 className="font-heading text-sm font-semibold text-foreground mb-1">
+                            Team Needs Landscape
+                          </h2>
+                          <p className="text-xs text-muted-foreground mb-3">
+                            Which needs consistently emerge as stronger priorities across the team.
+                          </p>
+                          <TeamNeedsHeatmap members={snapshotScores} rowOrder={rowOrder} />
+                        </div>
+
+                        <div>
+                          <h2 className="font-heading text-sm font-semibold text-foreground mb-1">Needs Spectrum</h2>
+                          <p className="text-xs text-muted-foreground mb-3">
+                            Where the team clusters together on a need, and where one person stands apart.
+                          </p>
+                          <NeedsSpectrum members={snapshotScores} rowOrder={rowOrder} />
+                        </div>
+
+                        <p className="text-xs text-muted-foreground max-w-2xl">
+                          This is an initial snapshot based on the choices people made between competing workplace
+                          needs. Use it to start conversations, not to make definitive assumptions about anyone.
+                        </p>
+                      </div>
+                    );
+                  })()
+                )}
               </div>
             )}
           </>
