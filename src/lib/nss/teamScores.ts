@@ -154,6 +154,55 @@ export function describeFavorability(value: number, firstName: string): string {
   return band.phrase(firstName);
 }
 
+// The Needs Spectrum's three zones are not a new classification — they're
+// BAND_PHRASES' existing five text bands grouped into three coarser
+// buckets, using the exact same 0.55/0.45 cutoffs that already separate
+// "no strong signal" from its neighbors above. "Clearer priority" and
+// "relatively stronger priority" both read as the same zone; "relatively
+// lower" and "less prominent" both read as the other. A dot's zone and its
+// own detail text (describeFavorability) can therefore never disagree —
+// they're derived from the same two numbers.
+export type SpectrumZone = "lower" | "none" | "stronger";
+
+export const SPECTRUM_ZONE_LABELS: Record<SpectrumZone, string> = {
+  lower: "Lower Relative Priority",
+  none: "No Strong Signal",
+  stronger: "Stronger Relative Priority",
+};
+
+export function spectrumZoneFor(value: number): SpectrumZone {
+  if (value >= 0.55) return "stronger";
+  if (value >= 0.45) return "none";
+  return "lower";
+}
+
+// Zone value-ranges, matching spectrumZoneFor exactly, and the share of
+// the track each zone occupies. Track shares are presentational/nominal —
+// the "no strong signal" zone covers only a 10-point value range but gets
+// real visual width to hold, since it's a category boundary being drawn,
+// not a proportional slice of the 0-1 value axis.
+const ZONE_LAYOUT: Record<SpectrumZone, { valueMin: number; valueMax: number; trackMin: number; trackMax: number }> = {
+  lower: { valueMin: 0, valueMax: 0.45, trackMin: 0, trackMax: 0.36 },
+  none: { valueMin: 0.45, valueMax: 0.55, trackMin: 0.36, trackMax: 0.64 },
+  stronger: { valueMin: 0.55, valueMax: 1, trackMin: 0.64, trackMax: 1 },
+};
+
+export function spectrumZoneTrackBounds(zone: SpectrumZone): { trackMin: number; trackMax: number } {
+  return ZONE_LAYOUT[zone];
+}
+
+/**
+ * Where a value falls within its own zone's value sub-range, as a 0-1
+ * fraction — purely presentational (never used for scoring, ordering, or
+ * the detail text), and always resolves against the same zone
+ * spectrumZoneFor() would assign, so a dot's drawn position can never
+ * fall in a different zone than what its own label says.
+ */
+export function spectrumWithinZoneT(value: number): number {
+  const { valueMin, valueMax } = ZONE_LAYOUT[spectrumZoneFor(value)];
+  return valueMax > valueMin ? (value - valueMin) / (valueMax - valueMin) : 0.5;
+}
+
 /**
  * Heatmap column headers: first name alone, unless two people on this team
  * share a first name, in which case just those people get a last initial

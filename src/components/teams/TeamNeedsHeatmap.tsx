@@ -59,7 +59,7 @@ export default function TeamNeedsHeatmap({
                         title={`${m.fullName} — ${CLUSTER_LABELS[cluster]}`}
                         aria-label={`${m.fullName}, ${CLUSTER_LABELS[cluster]}: ${describeFavorability(value, m.firstName)}`}
                         style={{ backgroundColor: favorabilityToTeal(value) }}
-                        className={`block w-11 h-9 sm:w-14 sm:h-11 rounded-md border transition-shadow ${
+                        className={`block w-12 h-10 sm:w-16 sm:h-12 rounded-md border transition-shadow ${
                           isSelected
                             ? "border-primary ring-2 ring-primary"
                             : "border-border/40 hover:ring-2 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary"
@@ -74,7 +74,7 @@ export default function TeamNeedsHeatmap({
         </table>
       </div>
 
-      <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
+      <div className="flex items-center justify-between mt-2.5 flex-wrap gap-2">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>Lower relative priority</span>
           <span
@@ -85,7 +85,7 @@ export default function TeamNeedsHeatmap({
         </div>
       </div>
 
-      <div className="mt-3 min-h-[2.5rem] rounded-lg bg-secondary/60 px-3 py-2 text-sm text-foreground">
+      <div className="mt-2.5 min-h-[2.5rem] rounded-lg bg-secondary/60 px-3 py-2 text-sm text-foreground">
         {selected ? (
           <>
             <span className="font-medium">{selected.member.fullName}</span>

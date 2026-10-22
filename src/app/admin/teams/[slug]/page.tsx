@@ -760,34 +760,24 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                   (() => {
                     const rowOrder = computeTeamRowOrder(snapshotScores);
                     return (
-                      <div className="space-y-10">
+                      <div className="space-y-6">
                         <p className="text-sm text-muted-foreground max-w-2xl">
                           Darker colors and dots farther to the right indicate needs that emerged as stronger
                           priorities for that person when compared with their other needs. Lighter colors and dots
                           farther left indicate relatively lower priorities — not needs that are unimportant.
+                          {snapshotScores.length === 1 &&
+                            " With only one completed survey so far, this shows that person's own profile — team patterns will become clearer as more people complete the NSS."}
                         </p>
-                        {snapshotScores.length === 1 && (
-                          <p className="text-xs text-muted-foreground -mt-7">
-                            With only one completed survey so far, this shows that person&apos;s own profile — team
-                            patterns will become clearer as more people complete the NSS.
-                          </p>
-                        )}
 
                         <div>
-                          <h2 className="font-heading text-sm font-semibold text-foreground mb-1">
+                          <h2 className="font-heading text-sm font-semibold text-foreground mb-2">
                             Team Needs Landscape
                           </h2>
-                          <p className="text-xs text-muted-foreground mb-3">
-                            Which needs consistently emerge as stronger priorities across the team.
-                          </p>
                           <TeamNeedsHeatmap members={snapshotScores} rowOrder={rowOrder} />
                         </div>
 
                         <div>
-                          <h2 className="font-heading text-sm font-semibold text-foreground mb-1">Needs Spectrum</h2>
-                          <p className="text-xs text-muted-foreground mb-3">
-                            Where the team clusters together on a need, and where one person stands apart.
-                          </p>
+                          <h2 className="font-heading text-sm font-semibold text-foreground mb-2">Needs Spectrum</h2>
                           <NeedsSpectrum members={snapshotScores} rowOrder={rowOrder} />
                         </div>
 
