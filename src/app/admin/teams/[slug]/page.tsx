@@ -26,6 +26,7 @@ import type { BtResponse } from "@/lib/nss/bradleyTerry";
 import { computeTeamMemberScores, computeTeamRowOrder, type TeamMemberScore } from "@/lib/nss/teamScores";
 import TeamNeedsHeatmap from "@/components/teams/TeamNeedsHeatmap";
 import NeedsSpectrum from "@/components/teams/NeedsSpectrum";
+import TeamNeedsConstellation from "@/components/teams/TeamNeedsConstellation";
 import GlobalHeader from "@/components/GlobalHeader";
 
 interface Team {
@@ -779,6 +780,13 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                         <div>
                           <h2 className="font-heading text-sm font-semibold text-foreground mb-2">Needs Spectrum</h2>
                           <NeedsSpectrum members={snapshotScores} rowOrder={rowOrder} />
+                        </div>
+
+                        <div>
+                          <h2 className="font-heading text-sm font-semibold text-foreground mb-2">
+                            Team Needs Constellation
+                          </h2>
+                          <TeamNeedsConstellation members={snapshotScores} />
                         </div>
 
                         <p className="text-xs text-muted-foreground max-w-2xl">
