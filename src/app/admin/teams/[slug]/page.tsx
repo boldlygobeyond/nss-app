@@ -782,7 +782,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                         </div>
 
                         <p className="text-xs text-muted-foreground max-w-2xl">
-                          This is an initial snapshot based on the choices people made between competing workplace
+                          This is an initial snapshot based on the choices people made between competing human
                           needs. Use it to start conversations, not to make definitive assumptions about anyone.
                         </p>
                       </div>

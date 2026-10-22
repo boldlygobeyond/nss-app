@@ -20,12 +20,11 @@ interface Selected {
   cluster: ClusterKey;
 }
 
-// ~28% narrower than a full-width track, centered in the available space —
-// every row (and the zone-label row above them) uses this exact same
-// width/inset pair, so all seven spectra and their zone boundaries share
-// identical left/right endpoints.
-const TRACK_WIDTH = "w-[72%] min-w-[170px]";
-const LANE_STEP = 11;
+// Centered in the available space — every row (and the zone-label row
+// above them) uses this exact same width/inset pair, so all seven spectra
+// and their zone boundaries share identical left/right endpoints.
+const TRACK_WIDTH = "w-[92%] min-w-[220px]";
+const LANE_STEP = 13;
 const DOT_SIZE = 28;
 const DOT_RADIUS = DOT_SIZE / 2;
 
@@ -91,7 +90,11 @@ export default function NeedsSpectrum({
             const { trackMin, trackMax } = spectrumZoneTrackBounds(spectrumZoneFor(value));
             return trackMin + spectrumWithinZoneT(value) * (trackMax - trackMin);
           });
-          const lanes = assignSpectrumLanes(approxPositions);
+          // Widened from the default 0.025 — tightly clustered real values
+          // (e.g. several people all landing in the high-80s/low-90s on
+          // Emotional Ecosystem) were close enough to look crowded on
+          // screen without being close enough to trigger staggering.
+          const lanes = assignSpectrumLanes(approxPositions, 0.035);
           const maxLane = lanes.reduce((max, l) => Math.max(max, Math.abs(l)), 0);
           const rowHeight = Math.max(32, 18 + (maxLane + 1) * LANE_STEP * 2);
 
@@ -116,11 +119,11 @@ export default function NeedsSpectrum({
                       since every row shares the same TRACK_WIDTH, so they
                       read as continuous column dividers down the page. */}
                   <div
-                    className="absolute top-0 bottom-0 border-l border-dotted border-border"
+                    className="absolute top-0 bottom-0 border-l border-dotted border-muted-foreground/40"
                     style={{ left: `${spectrumZoneTrackBounds("none").trackMin * 100}%` }}
                   />
                   <div
-                    className="absolute top-0 bottom-0 border-l border-dotted border-border"
+                    className="absolute top-0 bottom-0 border-l border-dotted border-muted-foreground/40"
                     style={{ left: `${spectrumZoneTrackBounds("stronger").trackMin * 100}%` }}
                   />
                   <div className="absolute left-0 right-0 top-1/2 h-px bg-border/60" />
