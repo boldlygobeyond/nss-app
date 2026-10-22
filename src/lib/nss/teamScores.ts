@@ -73,40 +73,61 @@ export function computeTeamRowOrder(members: TeamMemberScore[]): ClusterKey[] {
   });
 }
 
-// Color only ever maps the middle 80% of the theoretical 0–1 range — real
-// pilot data topped out at 9%–94%, and the true 0%/100% ends only occur in
-// degenerate all-win/all-loss cases that would otherwise burn the darkest
-// and lightest cells on a case the scale will almost never see for real.
-const COLOR_DOMAIN_MIN = 0.1;
-const COLOR_DOMAIN_MAX = 0.9;
+// Three hand-picked anchors instead of a single-slope ramp (linear or
+// gamma-adjusted) over a plain light/dark teal pair — a single slope
+// forced a tradeoff between "secondary priorities are visible" and "low
+// priorities don't look too present" that no one exponent resolved well
+// on the real pilot data. Splitting the ramp into two linear segments
+// (10%->60%, 60%->90%) lets the middle segment carry its own share of
+// the visible color range independent of the other two.
+const COLOR_STOPS: { at: number; hex: string }[] = [
+  { at: 0.1, hex: "#E3F1F1" }, // lower priorities — subdued
+  { at: 0.6, hex: "#42C4C8" }, // meaningful middle priorities — clearly present
+  { at: 0.9, hex: "#008B93" }, // strongest priorities — still the standout
+];
 
-function clampColorT(value: number): number {
-  const clamped = Math.min(COLOR_DOMAIN_MAX, Math.max(COLOR_DOMAIN_MIN, value));
-  return (clamped - COLOR_DOMAIN_MIN) / (COLOR_DOMAIN_MAX - COLOR_DOMAIN_MIN);
+function hexToRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-// A linear ramp on the raw 0-1 value barely darkens anything below ~75% —
-// real pilot data showed a person's genuine second/third priority (e.g.
-// 55-70%) landing at a lightness barely different from a middling 50%,
-// so secondary priorities read as "pale" even when they're a real signal.
-// This gamma pulls the middle of the domain darker (more "present") while
-// leaving the two ends alone: raw 90%+ is already clamped to the top of
-// the domain and stays there regardless of gamma, and low scores only
-// darken a little, not enough to look like a real priority. Checked
-// against the real six-person pilot data at 0.6/0.7/0.8 — 0.65 was the
-// gentlest value that made a clear, visible difference on genuine
-// secondary priorities (55-75% raw) without compressing 20% and 50% into
-// looking similar.
-const HEATMAP_COLOR_GAMMA = 0.65;
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
 
-// Brand teal is hsl(183 100% 34%) (globals.css --primary) — the dark end of
-// this ramp lands close to it on purpose so the heatmap reads as "the same
-// product," not a generic chart-library gradient.
 export function favorabilityToTeal(value: number): string {
-  const t = clampColorT(value) ** HEATMAP_COLOR_GAMMA;
-  const saturation = 28 + t * 62; // 28% -> 90%
-  const lightness = 93 - t * 63; // 93% -> 30%
-  return `hsl(183 ${saturation}% ${lightness}%)`;
+  const first = COLOR_STOPS[0];
+  const last = COLOR_STOPS[COLOR_STOPS.length - 1];
+  const clamped = Math.min(last.at, Math.max(first.at, value));
+
+  let lower = first;
+  let upper = last;
+  for (let i = 0; i < COLOR_STOPS.length - 1; i++) {
+    if (clamped >= COLOR_STOPS[i].at && clamped <= COLOR_STOPS[i + 1].at) {
+      lower = COLOR_STOPS[i];
+      upper = COLOR_STOPS[i + 1];
+      break;
+    }
+  }
+
+  const span = upper.at - lower.at;
+  const t = span > 0 ? (clamped - lower.at) / span : 0;
+  const [r1, g1, b1] = hexToRgb(lower.hex);
+  const [r2, g2, b2] = hexToRgb(upper.hex);
+  const r = Math.round(lerp(r1, r2, t));
+  const g = Math.round(lerp(g1, g2, t));
+  const b = Math.round(lerp(b1, b2, t));
+  return `rgb(${r} ${g} ${b})`;
+}
+
+// CSS gradient for the legend swatch — built from the same anchors and
+// positions actually used above, so the legend can never silently drift
+// out of sync with what a cell's color really means.
+export function heatmapLegendGradientCss(): string {
+  const min = COLOR_STOPS[0].at;
+  const max = COLOR_STOPS[COLOR_STOPS.length - 1].at;
+  const stops = COLOR_STOPS.map((s) => `${s.hex} ${(((s.at - min) / (max - min)) * 100).toFixed(1)}%`);
+  return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
 // Distinct per-person identity colors for the spectrum dots — deliberately
@@ -154,30 +175,6 @@ export function initialsFor(member: TeamMemberScore): string {
   const first = member.firstName.trim()[0] ?? "";
   const last = member.lastName.trim()[0] ?? "";
   return `${first}${last}`.toUpperCase() || "?";
-}
-
-// Controls how much the spectrum pulls the far ends of the scale toward
-// the middle. tanh(Kx)/K has slope exactly 1 at the center for any K (so
-// two people close to 50-50 never get spread apart more than their real
-// difference warrants) and only visibly bends as x approaches the ±0.5
-// edges — unlike a plain log scale, it's symmetric, bounded, and gentle
-// near the middle by construction, not by tuning. K=2 was picked by
-// checking the real six-person pilot data: genuine near-center scores
-// (within ~20pp of 50%) moved by at most 1-2pp, while the most extreme
-// real outliers (9% and 94%, both on Marwa) were pulled in by about
-// 7-9pp — a visible compaction without flattening real differences.
-const SPECTRUM_COMPRESSION_K = 2;
-
-/**
- * Maps a 0-1 favorability value to a 0-1 horizontal position, compressing
- * values near the two ends toward the center while leaving values near
- * 50% essentially where a plain linear scale would put them. Strictly
- * monotonic, so left-to-right ordering always matches favorability order.
- */
-export function spectrumPositionT(value: number): number {
-  const x = value - 0.5;
-  const compressed = Math.tanh(SPECTRUM_COMPRESSION_K * x) / SPECTRUM_COMPRESSION_K;
-  return 0.5 + compressed;
 }
 
 /**

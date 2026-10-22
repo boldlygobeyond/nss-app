@@ -6,6 +6,7 @@ import {
   describeFavorability,
   favorabilityToTeal,
   heatmapDisplayNames,
+  heatmapLegendGradientCss,
   type TeamMemberScore,
 } from "@/lib/nss/teamScores";
 
@@ -78,7 +79,7 @@ export default function TeamNeedsHeatmap({
           <span>Lower relative priority</span>
           <span
             className="inline-block w-20 h-2.5 rounded-full"
-            style={{ background: `linear-gradient(to right, ${favorabilityToTeal(0.1)}, ${favorabilityToTeal(0.9)})` }}
+            style={{ background: heatmapLegendGradientCss() }}
           />
           <span>Higher relative priority</span>
         </div>
