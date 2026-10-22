@@ -7,6 +7,7 @@ import {
   describeFavorability,
   initialsFor,
   personIdentityColor,
+  spectrumPositionT,
   type TeamMemberScore,
 } from "@/lib/nss/teamScores";
 
@@ -36,8 +37,13 @@ export default function NeedsSpectrum({
 
       <div className="space-y-1">
         {rowOrder.map((cluster) => {
-          const values = members.map((m) => m.favorability[cluster]);
-          const lanes = assignSpectrumLanes(values);
+          // Lanes are assigned on the positions actually drawn on screen
+          // (post-compression), not the raw favorability values — two dots
+          // can be visually adjacent near the compressed edges even when
+          // their raw values are further apart than they'd need to be in
+          // the middle of the scale.
+          const positions = members.map((m) => spectrumPositionT(m.favorability[cluster]));
+          const lanes = assignSpectrumLanes(positions);
           const maxLane = lanes.reduce((max, l) => Math.max(max, Math.abs(l)), 0);
           const rowHeight = Math.max(56, 32 + (maxLane + 1) * LANE_STEP * 2);
 
@@ -64,7 +70,7 @@ export default function NeedsSpectrum({
                         title={`${m.fullName} — ${CLUSTER_LABELS[cluster]}`}
                         aria-label={`${m.fullName}, ${CLUSTER_LABELS[cluster]}: ${describeFavorability(value, m.firstName)}`}
                         style={{
-                          left: `${value * 100}%`,
+                          left: `${positions[i] * 100}%`,
                           top: `calc(50% + ${lane * LANE_STEP}px)`,
                           width: DOT_SIZE,
                           height: DOT_SIZE,
