@@ -35,7 +35,18 @@ export default function TeamNeedsHeatmap({
     <div ref={containerRef} className="flex flex-col lg:flex-row gap-4 items-start">
       <div className="flex-1 min-w-0">
         <div className="overflow-x-auto rounded-xl border border-border/50">
-          <table className="border-collapse">
+          {/* table-fixed + an explicit label column width, with the member
+              columns left unsized, so the fixed layout algorithm splits
+              whatever width is left over evenly across them — the table
+              stretches to fill the container instead of shrinking to its
+              content and leaving blank space to the right. */}
+          <table className="w-full table-fixed border-collapse">
+            <colgroup>
+              <col className="w-40" />
+              {members.map((m) => (
+                <col key={m.userId} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
                 <th className="sticky left-0 z-10 bg-card p-3" />
@@ -66,7 +77,7 @@ export default function TeamNeedsHeatmap({
                           title={`${m.fullName} — ${CLUSTER_LABELS[cluster]}`}
                           aria-label={`${m.fullName}, ${CLUSTER_LABELS[cluster]}: ${describeFavorability(value, m.firstName)}`}
                           style={{ backgroundColor: favorabilityToTeal(value) }}
-                          className={`block w-12 h-10 rounded-md border transition-shadow ${
+                          className={`block mx-auto w-12 h-10 rounded-md border transition-shadow ${
                             isSelected
                               ? "border-primary ring-2 ring-primary"
                               : "border-border/40 hover:ring-2 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary"
