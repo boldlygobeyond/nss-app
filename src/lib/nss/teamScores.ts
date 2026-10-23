@@ -7,7 +7,7 @@
 // three methods tested (it agreed with the other two at the extremes,
 // diverged only in the middle — same as they did with each other).
 
-import { CLUSTERS, CHART_ORDER, CLUSTER_LABELS, type ClusterKey } from "./clusters";
+import { CLUSTERS, CHART_ORDER, type ClusterKey } from "./clusters";
 import { rankByBradleyTerry, btFavorability, type BtResponse } from "./bradleyTerry";
 
 export interface TeamMemberInput {
@@ -201,35 +201,6 @@ export function spectrumZoneTrackBounds(zone: SpectrumZone): { trackMin: number;
 export function spectrumWithinZoneT(value: number): number {
   const { valueMin, valueMax } = ZONE_LAYOUT[spectrumZoneFor(value)];
   return valueMax > valueMin ? (value - valueMin) / (valueMax - valueMin) : 0.5;
-}
-
-/**
- * Plain-English comparison of two people's relative priority on one
- * cluster, for the Constellation's pairwise comparison panel — reuses
- * spectrumZoneFor so a comparison can never describe a relationship the
- * zones themselves would contradict. Deliberately says nothing about
- * compatibility, personality, or how well two people would work
- * together — only about where their relative priorities sit.
- */
-export function describeClusterComparison(
-  cluster: ClusterKey,
-  nameA: string,
-  valueA: number,
-  nameB: string,
-  valueB: number,
-): string {
-  const zoneA = spectrumZoneFor(valueA);
-  const zoneB = spectrumZoneFor(valueB);
-  const label = CLUSTER_LABELS[cluster];
-
-  if (zoneA === zoneB) {
-    if (zoneA === "stronger") return `Both ${nameA} and ${nameB} show a stronger relative priority for ${label}.`;
-    if (zoneA === "lower") return `${label} is a relatively lower priority for both ${nameA} and ${nameB}.`;
-    return `Neither ${nameA} nor ${nameB} shows a strong signal on ${label}.`;
-  }
-
-  const [higherName, lowerName] = valueA >= valueB ? [nameA, nameB] : [nameB, nameA];
-  return `${label} is a stronger relative priority for ${higherName} than for ${lowerName}.`;
 }
 
 /**
