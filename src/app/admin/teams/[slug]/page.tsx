@@ -751,30 +751,29 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                     const rowOrder = computeTeamRowOrder(snapshotScores);
                     return (
                       <div className="space-y-6">
-                        <p className="text-sm text-muted-foreground max-w-2xl">
-                          Darker colors and dots farther to the right indicate needs that emerged as stronger
-                          priorities for that person when compared with their other needs. Lighter colors and dots
-                          farther left indicate relatively lower priorities — not needs that are unimportant.
-                          {snapshotScores.length === 1 &&
-                            " With only one completed survey so far, this shows that person's own profile — team patterns will become clearer as more people complete the NSS."}
-                        </p>
-
                         <div>
                           <h2 className="font-heading text-sm font-semibold text-foreground mb-2">
                             Team Needs Landscape
                           </h2>
+                          <p className="text-sm text-muted-foreground max-w-2xl mb-3">
+                            Darker colors indicate needs that emerged as stronger priorities for that person when
+                            compared with their other needs. Lighter colors indicate relatively lower priorities —
+                            not needs that are unimportant.
+                            {snapshotScores.length === 1 &&
+                              " With only one completed survey so far, this shows that person's own profile — team patterns will become clearer as more people complete the NSS."}
+                          </p>
                           <TeamNeedsHeatmap members={snapshotScores} rowOrder={rowOrder} />
                         </div>
 
                         <div>
                           <h2 className="font-heading text-sm font-semibold text-foreground mb-2">Needs Spectrum</h2>
+                          <p className="text-sm text-muted-foreground max-w-2xl mb-3">
+                            Dots farther to the right indicate needs that emerged as stronger priorities for that
+                            person when compared with their other needs. Dots farther left indicate relatively
+                            lower priorities — not needs that are unimportant.
+                          </p>
                           <NeedsSpectrum members={snapshotScores} rowOrder={rowOrder} />
                         </div>
-
-                        <p className="text-xs text-muted-foreground max-w-2xl">
-                          This is an initial snapshot based on the choices people made between competing human
-                          needs. Use it to start conversations, not to make definitive assumptions about anyone.
-                        </p>
                       </div>
                     );
                   })()
