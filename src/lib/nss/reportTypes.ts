@@ -6,9 +6,6 @@
 export const INTRO_TEXT =
   "Take a look at your Needs Signal Report to understand how your needs might show up in the workplace. Share the report with your manager and have a conversation about what you need from the team to show up at your best every day.";
 
-export const SNAPSHOT_INTRO_TEXT =
-  "These scores give you an initial snapshot of which needs are most important to you today. As you take more in-depth Boldly Go Beyond diagnostics in the future, you'll see the scores below start to dial in more precisely, and they'll evolve over time.";
-
 export const RIPPLE_INTRO_TEXT =
   "Needs work as a connected system. When one need is met, it ripples out into other needs.";
 

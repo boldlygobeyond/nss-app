@@ -2,9 +2,10 @@ import type { ReactNode } from "react";
 import { Lightbulb } from "lucide-react";
 import { CLUSTER_LABELS, type ClusterKey } from "@/lib/nss/clusters";
 import type { ClusterScore } from "@/lib/nss/surveyEngine";
-import { INTRO_TEXT, SNAPSHOT_INTRO_TEXT, RIPPLE_INTRO_TEXT, type ReportData } from "@/lib/nss/reportTypes";
+import { INTRO_TEXT, RIPPLE_INTRO_TEXT, type ReportData } from "@/lib/nss/reportTypes";
 import { CALENDAR_URL } from "@/lib/nss/links";
-import NeedsChart from "./NeedsChart";
+import NeedsSignalZones from "./NeedsSignalZones";
+import NeedsClusterReference from "./NeedsClusterReference";
 import NeedsRipple from "./NeedsRipple";
 
 function possessivePronoun(pronouns: string | null | undefined): string {
@@ -94,10 +95,24 @@ export default function ReportView({
         </div>
       )}
 
+      {/* On-screen only — the PDF cover already has its own copy of this
+          table, and the "You aren't static..." framing around it is
+          already covered by the interstitial page a respondent sees
+          before landing here, so it isn't repeated in this on-screen view. */}
+      {!forPdf && (
+        <div className="mt-6">
+          <NeedsClusterReference />
+        </div>
+      )}
+
       <div className="print:break-inside-avoid">
         <SectionHeading>Your Current Needs Snapshot</SectionHeading>
-        <p className="text-muted-foreground leading-relaxed mb-4">{SNAPSHOT_INTRO_TEXT}</p>
-        <NeedsChart scores={scores} />
+        <p className="text-muted-foreground leading-relaxed mb-4">
+          When you compared different needs with one another, some emerged as stronger priorities, others as
+          lower priorities, and some showed no strong signal in either direction. Think of this as a snapshot of
+          what you tended to prioritize today, rather than a measure of how important each need is to you.
+        </p>
+        <NeedsSignalZones scores={scores} />
       </div>
 
       <div className="print:break-inside-avoid print:break-before-page">
@@ -142,11 +157,9 @@ export default function ReportView({
           </colgroup>
           <thead className="bg-primary/5">
             <tr>
-              <th className="text-left p-3 font-semibold text-primary">When you see these signals...</th>
-              <th className="text-left p-3 font-semibold text-primary">The underlying need is likely...</th>
-              <th className="text-left p-3 font-semibold text-primary">
-                Reflect on what you need by asking yourself...
-              </th>
+              <th className="text-left p-3 font-semibold text-primary">Examples of Signals to Look For</th>
+              <th className="text-left p-3 font-semibold text-primary">Needs Cluster</th>
+              <th className="text-left p-3 font-semibold text-primary">Reflection Questions</th>
             </tr>
           </thead>
           <tbody>

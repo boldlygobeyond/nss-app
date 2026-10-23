@@ -171,9 +171,8 @@ export async function POST(request: Request) {
 
       after(async () => {
         try {
-          const coverUrl = `${origin}/reports/${submissionId}/print/cover`;
-          const bodyUrl = `${origin}/reports/${submissionId}/print?pdfMode=1`;
-          const pdfBuffer = await renderReportPdf({ coverUrl, bodyUrl, cookies: cookieList });
+          const printUrl = `${origin}/reports/${submissionId}/print/combined`;
+          const pdfBuffer = await renderReportPdf({ url: printUrl, cookies: cookieList });
 
           const adminClient = createAdminClient();
           await cacheReportPdf(adminClient, submissionId, pdfBuffer).catch((cacheError) =>

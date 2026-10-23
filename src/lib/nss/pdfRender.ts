@@ -6,14 +6,14 @@
 // design as the on-screen report with zero duplicate styling work, instead
 // of hand-building a second, simpler layout in a PDF library.
 //
-// The cover page and the report body are captured as two separate PDFs and
-// merged, because Puppeteer's header/footer templates apply uniformly to
-// every page with no way to skip the first one — this is the only reliable
-// way to get an unnumbered, footer-free cover page alongside a footered,
-// numbered body.
+// Single capture of /print/combined (cover immediately followed by the
+// body, in one page load) — not two separate captures merged together.
+// The old two-capture approach existed only to give the cover zero
+// footer; now that the cover has a real footer, there's nothing left for
+// the split to buy, and it was the direct cause of both halves
+// independently starting their page count at 1.
 
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
-import { PDFDocument } from "pdf-lib";
 
 const DEV_CHROME_PATH =
   process.env.CHROME_EXECUTABLE_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -68,7 +68,7 @@ function buildFooterTemplate(logoDataUri: string): string {
   // external stylesheet, so every style has to be inline. `pageNumber` is
   // one of the few dynamic values Puppeteer substitutes automatically.
   return `
-    <div style="width:100%; font-size:11px; color:#6b7280; font-family:Arial,Helvetica,sans-serif; padding:0 15mm;">
+    <div style="width:100%; font-size:11px; color:#6b7280; font-family:Arial,Helvetica,sans-serif; padding:0 0.6in;">
       <div style="border-top:1px solid #d1d5db; width:45%; margin:0 auto 8px auto;"></div>
       <div style="display:flex; align-items:center; justify-content:space-between;">
         <img src="${logoDataUri}" style="height:18px;" />
@@ -79,48 +79,29 @@ function buildFooterTemplate(logoDataUri: string): string {
   `;
 }
 
-async function mergePdfs(buffers: Buffer[]): Promise<Buffer> {
-  const merged = await PDFDocument.create();
-  for (const buf of buffers) {
-    const doc = await PDFDocument.load(buf);
-    const pages = await merged.copyPages(doc, doc.getPageIndices());
-    pages.forEach((p) => merged.addPage(p));
-  }
-  return Buffer.from(await merged.save());
-}
-
-// Renders a cover page (no footer/page number) and the report body
-// (footered, numbered, starting at 1) as two separate captures and merges
-// them into one PDF. Cookies authenticate both requests as the real user —
-// no separate auth-bypass mechanism, RLS just works as it would normally.
+// Single continuous capture of /print/combined. Cookies authenticate the
+// request as the real user — no separate auth-bypass mechanism, RLS just
+// works as it would normally.
 export async function renderReportPdf(params: {
-  coverUrl: string;
-  bodyUrl: string;
+  url: string;
   cookies: { name: string; value: string }[];
 }): Promise<Buffer> {
   const browser = await launchBrowser();
   try {
-    const origin = new URL(params.bodyUrl).origin;
+    const origin = new URL(params.url).origin;
     const logoDataUri = await fetchAsDataUri(`${origin}/logo/bgb-star.png`);
 
-    const coverPage = await openAuthenticatedPage(browser, params.coverUrl, params.cookies);
-    const coverPdf = await coverPage.pdf({
-      format: "a4",
-      printBackground: true,
-      margin: { top: "15mm", bottom: "15mm", left: "15mm", right: "15mm" },
-    });
-
-    const bodyPage = await openAuthenticatedPage(browser, params.bodyUrl, params.cookies);
-    const bodyPdf = await bodyPage.pdf({
-      format: "a4",
+    const page = await openAuthenticatedPage(browser, params.url, params.cookies);
+    const pdf = await page.pdf({
+      format: "letter",
       printBackground: true,
       displayHeaderFooter: true,
       headerTemplate: "<span></span>",
       footerTemplate: buildFooterTemplate(logoDataUri),
-      margin: { top: "15mm", bottom: "22mm", left: "15mm", right: "15mm" },
+      margin: { top: "0.6in", bottom: "0.85in", left: "0.6in", right: "0.6in" },
     });
 
-    return await mergePdfs([Buffer.from(coverPdf), Buffer.from(bodyPdf)]);
+    return Buffer.from(pdf);
   } finally {
     await browser.close();
   }
