@@ -66,7 +66,7 @@ export default function TeamNeedsHeatmap({
                           title={`${m.fullName} — ${CLUSTER_LABELS[cluster]}`}
                           aria-label={`${m.fullName}, ${CLUSTER_LABELS[cluster]}: ${describeFavorability(value, m.firstName)}`}
                           style={{ backgroundColor: favorabilityToTeal(value) }}
-                          className={`block w-12 h-10 sm:w-16 sm:h-12 rounded-md border transition-shadow ${
+                          className={`block w-12 h-10 rounded-md border transition-shadow ${
                             isSelected
                               ? "border-primary ring-2 ring-primary"
                               : "border-border/40 hover:ring-2 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary"
