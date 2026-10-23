@@ -111,7 +111,7 @@ Output ONLY a single valid JSON object, no markdown code fences, no commentary b
     // EXACTLY 3 entries — not 2, not 4. Ordered by priority, starting with the #1 ranked cluster (highest-leverage, strongest signal) through the next two clusters from the ranked list above. These needs reinforce each other rather than unlocking in a strict one-way sequence — do not imply the second or third need is impossible to meet until the previous one is fully resolved.
     {
       "cluster": "Exact cluster label for this step, e.g. 'Core Stability'.",
-      "body": "1-2 sentences, second person. For the FIRST entry: explain why this is the highest-leverage place to focus first, since it is the strongest signal. For the SECOND and THIRD entries: explain how attention to the earlier need(s) in this list creates supportive conditions for this one, and note that progress on this one likewise feeds back into supporting the earlier need(s) too, since these reinforce each other rather than flowing only one direction. Reference cluster names by their exact labels. Do not describe hypothetical behavior when a need is met or unmet — describe only the relationship between the needs themselves."
+      "body": "1-2 sentences, second person. For the FIRST entry: explain why this is a promising place to start, since it emerged as one of your strongest priorities. For the SECOND and THIRD entries: explain how attention to the earlier need(s) in this list creates supportive conditions for this one, and note that progress on this one likewise feeds back into supporting the earlier need(s) too, since these reinforce each other rather than flowing only one direction. Reference cluster names by their exact labels. Do not describe hypothetical behavior when a need is met or unmet — describe only the relationship between the needs themselves."
     }
   ],
   "signals": [
@@ -129,7 +129,7 @@ Output ONLY a single valid JSON object, no markdown code fences, no commentary b
   "managerInsights": [
     // Exactly 4 entries, personalized using the name "${firstName}" and pronouns ${heLower}/${hisHer}/${himHer} throughout (never "they/them" unless that is the pronoun set given above).
     {
-      "label": "A short 2-4 word bolded-style label, no trailing colon or punctuation, e.g. 'Creating Steady Ground'",
+      "label": "A short 2-4 word bolded-style label, no trailing colon or punctuation, e.g. 'Creating Steady Ground'. Use standard title case: capitalize the main words, and keep short connecting words like 'the', 'a', 'of', and 'and' lowercase unless one of them is the first word.",
       "body": "1 sentence written TO the manager, ABOUT ${firstName}, using ${heLower}/${hisHer}/${himHer} pronouns, explaining a concrete way the manager can support this need."
     }
   ]
@@ -254,7 +254,7 @@ Output ONLY a single valid JSON object, no markdown code fences, no commentary b
     // EXACTLY 3 entries — not 2, not 4. Ordered by priority, starting with the #1 ranked cluster through the next two clusters from the ranked list above. These needs reinforce each other rather than unlocking in a strict one-way sequence.
     {
       "cluster": "Exact cluster label for this step, e.g. 'Core Stability'.",
-      "body": "1-2 sentences, second person. For the FIRST entry: explain why this is the highest-leverage place to focus first. For the SECOND and THIRD entries: explain how attention to the earlier need(s) creates supportive conditions for this one, and that progress on this one feeds back into the earlier need(s) too."
+      "body": "1-2 sentences, second person. For the FIRST entry: explain why this is a promising place to start, since it emerged as one of your strongest priorities. For the SECOND and THIRD entries: explain how attention to the earlier need(s) creates supportive conditions for this one, and that progress on this one feeds back into the earlier need(s) too."
     }
   ],
   "signals": [
@@ -271,7 +271,7 @@ Output ONLY a single valid JSON object, no markdown code fences, no commentary b
   "managerInsights": [
     // Exactly 4 entries, personalized using the name "${firstName}" and pronouns ${heLower}/${hisHer}/${himHer} throughout (never "they/them" unless that is the pronoun set given above).
     {
-      "label": "A short 2-4 word bolded-style label, no trailing colon or punctuation, e.g. 'Creating Steady Ground'",
+      "label": "A short 2-4 word bolded-style label, no trailing colon or punctuation, e.g. 'Creating Steady Ground'. Use standard title case: capitalize the main words, and keep short connecting words like 'the', 'a', 'of', and 'and' lowercase unless one of them is the first word.",
       "body": "1 sentence written TO the manager, ABOUT ${firstName}, using ${heLower}/${hisHer}/${himHer} pronouns, explaining a concrete way the manager can support this need."
     }
   ]

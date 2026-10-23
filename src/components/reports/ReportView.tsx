@@ -171,7 +171,7 @@ export default function ReportView({
         <SectionHeading>Key Insights for Your Manager</SectionHeading>
         <p className="text-muted-foreground leading-relaxed mb-4">
           During your next 1:1 with your manager, walk through this report and chat through what you need to show
-          up as your best. If the topics below resonate, use them as a starting off point for your conversation:
+          up as your best. If the topics below resonate, use them as a starting point for your conversation:
         </p>
         <p className="font-heading text-base font-bold text-foreground mb-3">
           Tips for Helping {firstName} Meet {possessivePronoun(pronouns)} Needs
