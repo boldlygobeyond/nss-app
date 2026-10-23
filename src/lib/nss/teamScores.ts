@@ -73,17 +73,21 @@ export function computeTeamRowOrder(members: TeamMemberScore[]): ClusterKey[] {
   });
 }
 
-// Three hand-picked anchors instead of a single-slope ramp (linear or
-// gamma-adjusted) over a plain light/dark teal pair — a single slope
-// forced a tradeoff between "secondary priorities are visible" and "low
-// priorities don't look too present" that no one exponent resolved well
-// on the real pilot data. Splitting the ramp into two linear segments
-// (10%->60%, 60%->90%) lets the middle segment carry its own share of
-// the visible color range independent of the other two.
+// Five anchors instead of a single-slope ramp (linear or gamma-adjusted)
+// over a plain light/dark teal pair. The earlier three-anchor version
+// (10%->60%, 60%->90%) put its steepest slope around 60-90%, which left
+// 40-70% — where most real pilot scores actually cluster, including the
+// "no strong signal" boundary at 45-55% — nearly flat: two scores a few
+// points apart in that band were visually indistinguishable. These five
+// anchors spend extra slope specifically across 30-70% instead, and use
+// the full 0-100% range (not 10-90%) so no real value gets clamped to an
+// end-anchor's color.
 const COLOR_STOPS: { at: number; hex: string }[] = [
-  { at: 0.1, hex: "#E3F1F1" }, // lower priorities — subdued
-  { at: 0.6, hex: "#42C4C8" }, // meaningful middle priorities — clearly present
-  { at: 0.9, hex: "#008B93" }, // strongest priorities — still the standout
+  { at: 0.0, hex: "#F2FAFA" }, // lower priorities — subdued
+  { at: 0.3, hex: "#BFE8EA" },
+  { at: 0.5, hex: "#5BC7CB" }, // the "comparable to other needs" midpoint
+  { at: 0.7, hex: "#0D97A0" },
+  { at: 1.0, hex: "#004850" }, // strongest priorities — still the standout
 ];
 
 function hexToRgb(hex: string): [number, number, number] {

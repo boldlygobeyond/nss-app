@@ -92,14 +92,12 @@ export default function TeamNeedsHeatmap({
           </table>
         </div>
 
-        <div className="flex items-center justify-between mt-2.5 flex-wrap gap-2">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="mt-2.5 max-w-md">
+          <div className="h-2.5 rounded-full" style={{ background: heatmapLegendGradientCss() }} />
+          <div className="flex items-center justify-between flex-wrap gap-x-3 mt-1 text-xs text-muted-foreground">
             <span>Lower relative priority</span>
-            <span
-              className="inline-block w-20 h-2.5 rounded-full"
-              style={{ background: heatmapLegendGradientCss() }}
-            />
-            <span>Higher relative priority</span>
+            <span>Comparable to other needs</span>
+            <span>Stronger relative priority</span>
           </div>
         </div>
       </div>
