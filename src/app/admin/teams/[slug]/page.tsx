@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -12,8 +12,6 @@ import {
   RotateCw,
   AlertTriangle,
   Trash2,
-  Minus,
-  Plus,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, listAllProfiles } from "@/lib/nss/userProfiles";
@@ -79,25 +77,34 @@ function isTab(value: string | null): value is Tab {
 }
 
 interface OrgTreeNode {
-  entry: RosterEntry;
+  key: string;
+  // null for a synthetic box standing in for a manager who isn't on the
+  // roster themselves (see buildOrgForest below).
+  entry: RosterEntry | null;
+  externalManagerEmail: string | null;
   report: ReportEntry | null;
   children: OrgTreeNode[];
 }
 
 // Builds the manager hierarchy straight from the roster's own manager_email
 // column — no separate "org chart" data to maintain. A roster row becomes
-// a root when its manager isn't anyone else on the roster (an external or
-// not-yet-added manager), so there can be more than one top-level box.
+// a top-level box when its manager isn't anyone else on the roster (an
+// external or not-yet-added manager). When two or more such rows share the
+// same external manager, they're grouped under one synthetic box for that
+// manager instead of showing as unrelated peers, so a big team still
+// visibly rolls up to one person even though that person was never added
+// to the roster themselves. A lone report to an unlisted manager stays a
+// plain top-level box — nothing to group it with.
 function buildOrgForest(roster: RosterEntry[], reportsByEmail: Record<string, ReportEntry>): OrgTreeNode[] {
   const byEmail = new Map(roster.map((r) => [r.email.toLowerCase(), r]));
   const childrenOf = new Map<string, RosterEntry[]>();
-  const hasParent = new Set<string>();
+  const hasInternalParent = new Set<string>();
 
   roster.forEach((r) => {
     const email = r.email.toLowerCase();
     const managerEmail = r.manager_email?.trim().toLowerCase();
     if (managerEmail && managerEmail !== email && byEmail.has(managerEmail)) {
-      hasParent.add(email);
+      hasInternalParent.add(email);
       const list = childrenOf.get(managerEmail) ?? [];
       list.push(r);
       childrenOf.set(managerEmail, list);
@@ -117,14 +124,16 @@ function buildOrgForest(roster: RosterEntry[], reportsByEmail: Record<string, Re
       .filter((c) => !visited.has(c.email.toLowerCase()))
       .sort(byFirstName);
     return {
+      key: entry.id,
       entry,
+      externalManagerEmail: null,
       report: reportsByEmail[entry.email.toLowerCase()] ?? null,
       children: kids.map(buildNode),
     };
   }
 
-  const forest = roster
-    .filter((r) => !hasParent.has(r.email.toLowerCase()))
+  const topLevelNodes: OrgTreeNode[] = roster
+    .filter((r) => !hasInternalParent.has(r.email.toLowerCase()))
     .sort(byFirstName)
     .map(buildNode);
 
@@ -134,9 +143,40 @@ function buildOrgForest(roster: RosterEntry[], reportsByEmail: Record<string, Re
   roster
     .filter((r) => !visited.has(r.email.toLowerCase()))
     .sort(byFirstName)
-    .forEach((r) => forest.push(buildNode(r)));
+    .forEach((r) => topLevelNodes.push(buildNode(r)));
 
-  return forest;
+  const externalGroups = new Map<string, OrgTreeNode[]>();
+  const forest: OrgTreeNode[] = [];
+  topLevelNodes.forEach((node) => {
+    const managerEmail = node.entry?.manager_email?.trim().toLowerCase();
+    if (!managerEmail || managerEmail === node.entry?.email.toLowerCase()) {
+      forest.push(node);
+      return;
+    }
+    const list = externalGroups.get(managerEmail) ?? [];
+    list.push(node);
+    externalGroups.set(managerEmail, list);
+  });
+
+  externalGroups.forEach((members, managerEmail) => {
+    if (members.length < 2) {
+      forest.push(...members);
+      return;
+    }
+    forest.push({
+      key: `external:${managerEmail}`,
+      entry: null,
+      externalManagerEmail: managerEmail,
+      report: null,
+      children: members.sort((a, b) => a.entry!.first_name.localeCompare(b.entry!.first_name)),
+    });
+  });
+
+  return forest.sort((a, b) =>
+    (a.entry?.first_name ?? a.externalManagerEmail ?? "").localeCompare(
+      b.entry?.first_name ?? b.externalManagerEmail ?? "",
+    ),
+  );
 }
 
 function OrgBox({
@@ -147,6 +187,18 @@ function OrgBox({
   profiles: Record<string, { first_name: string | null; last_name: string | null }>;
 }) {
   const { entry, report } = node;
+
+  if (!entry) {
+    return (
+      <div className="bg-secondary/40 border border-dashed border-border rounded-xl p-3 w-44 text-center shrink-0">
+        <p className="text-sm font-medium text-foreground truncate" title={node.externalManagerEmail ?? undefined}>
+          {node.externalManagerEmail}
+        </p>
+        <p className="text-xs text-muted-foreground mt-0.5">Manager (not on roster)</p>
+      </div>
+    );
+  }
+
   const fullName = report
     ? buildFullName(profiles[report.user_id]?.first_name, profiles[report.user_id]?.last_name, report.respondent_name)
     : `${entry.first_name} ${entry.last_name}`.trim();
@@ -181,10 +233,11 @@ function OrgBox({
   );
 }
 
-// Classic nested-list org-chart CSS: each child <li> draws a short stub up
-// to a shared horizontal bar (the bar is the union of every sibling's
-// ::after segment — trimmed to the half that reaches the outermost
-// children, hidden entirely for a lone child).
+// A shared horizontal divider under the parent, then its children in a
+// flex-wrap group below — unlike a classic single-row connector-line org
+// chart, this keeps reading as "these roll up to the one box above" even
+// once a big team wraps onto several lines, and it never needs its own
+// scrollbar since wrapping absorbs any width overflow.
 function OrgNodeRenderer({
   node,
   profiles,
@@ -193,21 +246,19 @@ function OrgNodeRenderer({
   profiles: Record<string, { first_name: string | null; last_name: string | null }>;
 }) {
   return (
-    <>
+    <div className="flex flex-col items-center">
       <OrgBox node={node} profiles={profiles} />
       {node.children.length > 0 && (
-        <ul className="flex pt-6">
-          {node.children.map((child) => (
-            <li
-              key={child.entry.id}
-              className="relative flex flex-col items-center px-3 pt-5 before:content-[''] before:absolute before:top-0 before:left-1/2 before:-translate-x-1/2 before:w-px before:h-5 before:bg-border after:content-[''] after:absolute after:top-0 after:left-0 after:right-0 after:h-px after:bg-border first:after:left-1/2 last:after:right-1/2 only:after:hidden"
-            >
-              <OrgNodeRenderer node={child} profiles={profiles} />
-            </li>
-          ))}
-        </ul>
+        <div className="flex flex-col items-center">
+          <div className="w-px h-5 bg-border" />
+          <div className="flex flex-wrap justify-center gap-x-4 gap-y-5 border-t border-border pt-5">
+            {node.children.map((child) => (
+              <OrgNodeRenderer key={child.key} node={child} profiles={profiles} />
+            ))}
+          </div>
+        </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -248,26 +299,6 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
   const [resyncing, setResyncing] = useState(false);
   const [resyncResult, setResyncResult] = useState<string | null>(null);
   const [resyncError, setResyncError] = useState<string | null>(null);
-
-  const [chartZoom, setChartZoom] = useState(1);
-  const chartScrollRef = useRef<HTMLDivElement>(null);
-  const chartDragRef = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
-
-  const handleChartDragStart = (e: MouseEvent<HTMLDivElement>) => {
-    const el = chartScrollRef.current;
-    if (!el) return;
-    chartDragRef.current = { startX: e.clientX, startY: e.clientY, scrollLeft: el.scrollLeft, scrollTop: el.scrollTop };
-  };
-  const handleChartDragMove = (e: MouseEvent<HTMLDivElement>) => {
-    const el = chartScrollRef.current;
-    const drag = chartDragRef.current;
-    if (!el || !drag) return;
-    el.scrollLeft = drag.scrollLeft - (e.clientX - drag.startX);
-    el.scrollTop = drag.scrollTop - (e.clientY - drag.startY);
-  };
-  const stopChartDrag = () => {
-    chartDragRef.current = null;
-  };
 
   const orgForest = useMemo(() => {
     const reportsByEmail: Record<string, ReportEntry> = {};
@@ -675,57 +706,15 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
 
             {tab === "reports" && (
               <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="font-heading text-sm font-semibold text-foreground">Reports</h2>
-                  {roster.length > 0 && (
-                    <div className="flex items-center gap-1 bg-card border border-border/50 rounded-lg p-1">
-                      <button
-                        onClick={() => setChartZoom((z) => Math.max(0.4, Math.round((z - 0.15) * 100) / 100))}
-                        title="Zoom out"
-                        className="flex items-center justify-center h-7 w-7 rounded-md hover:bg-secondary text-muted-foreground transition-colors"
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setChartZoom(1)}
-                        title="Reset zoom"
-                        className="text-xs font-medium px-2 py-1 rounded-md hover:bg-secondary text-muted-foreground transition-colors"
-                      >
-                        {Math.round(chartZoom * 100)}%
-                      </button>
-                      <button
-                        onClick={() => setChartZoom((z) => Math.min(1.5, Math.round((z + 0.15) * 100) / 100))}
-                        title="Zoom in"
-                        className="flex items-center justify-center h-7 w-7 rounded-md hover:bg-secondary text-muted-foreground transition-colors"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <h2 className="font-heading text-sm font-semibold text-foreground mb-3">Reports</h2>
                 {roster.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No one on the roster yet.</p>
                 ) : (
-                  <div
-                    ref={chartScrollRef}
-                    onMouseDown={handleChartDragStart}
-                    onMouseMove={handleChartDragMove}
-                    onMouseUp={stopChartDrag}
-                    onMouseLeave={stopChartDrag}
-                    className="relative overflow-auto rounded-xl border border-border/50 bg-secondary/30 cursor-grab active:cursor-grabbing select-none"
-                    style={{ height: "65vh" }}
-                  >
-                    <div
-                      className="inline-block p-10 origin-top-left"
-                      style={{ transform: `scale(${chartZoom})` }}
-                    >
-                      <ul className="flex gap-10">
-                        {orgForest.map((root) => (
-                          <li key={root.entry.id} className="flex flex-col items-center">
-                            <OrgNodeRenderer node={root} profiles={profiles} />
-                          </li>
-                        ))}
-                      </ul>
+                  <div className="rounded-xl border border-border/50 bg-secondary/30 p-6">
+                    <div className="flex flex-wrap justify-center gap-x-10 gap-y-8">
+                      {orgForest.map((root) => (
+                        <OrgNodeRenderer key={root.key} node={root} profiles={profiles} />
+                      ))}
                     </div>
                   </div>
                 )}
