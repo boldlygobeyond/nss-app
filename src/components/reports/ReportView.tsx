@@ -4,7 +4,7 @@ import { CLUSTER_LABELS, type ClusterKey } from "@/lib/nss/clusters";
 import type { ClusterScore } from "@/lib/nss/surveyEngine";
 import { INTRO_TEXT, RIPPLE_INTRO_TEXT, type ReportData } from "@/lib/nss/reportTypes";
 import { CALENDAR_URL } from "@/lib/nss/links";
-import NeedsSignalZones from "./NeedsSignalZones";
+import LeadingNeedsSnapshot from "./LeadingNeedsSnapshot";
 import NeedsClusterReference from "./NeedsClusterReference";
 import NeedsRipple from "./NeedsRipple";
 
@@ -108,11 +108,10 @@ export default function ReportView({
       <div className="print:break-inside-avoid">
         <SectionHeading>Your Current Needs Snapshot</SectionHeading>
         <p className="text-muted-foreground leading-relaxed mb-4">
-          When you compared different needs with one another, some emerged as stronger priorities, others as
-          lower priorities, and some showed no strong signal in either direction. Think of this as a snapshot of
-          what you tended to prioritize today, rather than a measure of how important each need is to you.
+          When asked to choose between different needs, these three emerged as your leading priorities. This
+          report will start to explore what your choices might reveal about what helps you thrive.
         </p>
-        <NeedsSignalZones scores={scores} />
+        <LeadingNeedsSnapshot scores={scores} />
       </div>
 
       <div className="print:break-inside-avoid print:break-before-page">
