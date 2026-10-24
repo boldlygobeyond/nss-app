@@ -1,11 +1,8 @@
 // Team Snapshot scoring/layout helpers — pure functions over the existing
 // Bradley-Terry output (bradleyTerry.ts), no changes to the scoring engine
-// itself. Validated against real pilot-team data before this was written:
-// raw favorability (not re-normalized per person) preserves the real
-// difference between concentrated and flat profiles, and average
-// within-person rank was the most defensible simple row-ordering of the
-// three methods tested (it agreed with the other two at the extremes,
-// diverged only in the middle — same as they did with each other).
+// itself. Raw per-person favorability is never renormalized across the
+// team — only averaged per cluster, for row ordering and the Needs
+// Profile's average hash mark, both reading the exact same numbers.
 
 import { CLUSTERS, CHART_ORDER, type ClusterKey } from "./clusters";
 import { rankByBradleyTerry, btFavorability, type BtResponse } from "./bradleyTerry";
@@ -52,22 +49,34 @@ export function computeTeamMemberScores(members: TeamMemberInput[]): TeamMemberS
 }
 
 /**
- * Average within-person Bradley-Terry rank per cluster, ascending (strongest
- * collective priority first). Every person contributes exactly one rank
- * 1–7 per cluster regardless of how differentiated their own answers were,
- * so this doesn't inherit the "more decisive answerer looks more extreme"
- * distortion that averaging raw favorability percentages would. Ties get a
- * stable secondary sort (the chart's fixed display order) so row order
- * never jitters between renders.
+ * Arithmetic mean of raw Bradley-Terry favorability per cluster, across
+ * every completed team member — the single source of truth both the
+ * heatmap's row order and the Needs Profile's average hash mark read, so
+ * the two visualizations can never disagree about where a cluster's
+ * average actually sits. Not a team-wide BT score (no cross-person
+ * recomputation) — just the mean of each person's own already-computed
+ * favorability value.
+ */
+export function computeClusterAverages(members: TeamMemberScore[]): Record<ClusterKey, number> {
+  const avg = {} as Record<ClusterKey, number>;
+  CLUSTERS.forEach((c) => {
+    avg[c] = members.length === 0 ? 0.5 : members.reduce((sum, m) => sum + m.favorability[c], 0) / members.length;
+  });
+  return avg;
+}
+
+/**
+ * Clusters ordered by descending team-average favorability (see
+ * computeClusterAverages) — both the heatmap and Needs Profile render
+ * their seven rows in this same order. Ties get a stable secondary sort
+ * (the chart's fixed display order) so row order never jitters between
+ * renders.
  */
 export function computeTeamRowOrder(members: TeamMemberScore[]): ClusterKey[] {
   if (members.length === 0) return CHART_ORDER;
-  const avgRank = {} as Record<ClusterKey, number>;
-  CLUSTERS.forEach((c) => {
-    avgRank[c] = members.reduce((sum, m) => sum + m.rank[c], 0) / members.length;
-  });
+  const avg = computeClusterAverages(members);
   return [...CLUSTERS].sort((a, b) => {
-    const diff = avgRank[a] - avgRank[b];
+    const diff = avg[b] - avg[a];
     if (Math.abs(diff) > 1e-9) return diff;
     return CHART_ORDER.indexOf(a) - CHART_ORDER.indexOf(b);
   });
@@ -134,79 +143,6 @@ export function heatmapLegendGradientCss(): string {
   return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
-// Distinct per-person identity colors for the spectrum dots — deliberately
-// rotated away from the heatmap's teal hue band (within ~20° of 183) so a
-// dot's color never reads as if it were encoding a favorability value the
-// way the heatmap's color does. Position encodes the value there instead.
-export function personIdentityColor(index: number, total: number): string {
-  const slice = 360 / Math.max(total, 1);
-  let hue = (index * slice) % 360;
-  if (hue > 163 && hue < 213) hue = (hue + 90) % 360;
-  return `hsl(${Math.round(hue)} 62% 46%)`;
-}
-
-const BAND_PHRASES: { min: number; phrase: (name: string) => string }[] = [
-  { min: 0.65, phrase: (n) => `One of ${n}'s clearer priorities` },
-  { min: 0.55, phrase: (n) => `A relatively stronger priority for ${n}` },
-  { min: 0.45, phrase: (n) => `Close to ${n}'s own average — no strong signal either way` },
-  { min: 0.35, phrase: (n) => `A relatively lower priority for ${n}` },
-  { min: -Infinity, phrase: (n) => `One of ${n}'s less prominent needs right now` },
-];
-
-export function describeFavorability(value: number, firstName: string): string {
-  const band = BAND_PHRASES.find((b) => value >= b.min)!;
-  return band.phrase(firstName);
-}
-
-// The Needs Spectrum's three zones are not a new classification — they're
-// BAND_PHRASES' existing five text bands grouped into three coarser
-// buckets, using the exact same 0.55/0.45 cutoffs that already separate
-// "no strong signal" from its neighbors above. "Clearer priority" and
-// "relatively stronger priority" both read as the same zone; "relatively
-// lower" and "less prominent" both read as the other. A dot's zone and its
-// own detail text (describeFavorability) can therefore never disagree —
-// they're derived from the same two numbers.
-export type SpectrumZone = "lower" | "none" | "stronger";
-
-export const SPECTRUM_ZONE_LABELS: Record<SpectrumZone, string> = {
-  lower: "Lower Relative Priority",
-  none: "No Strong Signal",
-  stronger: "Stronger Relative Priority",
-};
-
-export function spectrumZoneFor(value: number): SpectrumZone {
-  if (value >= 0.55) return "stronger";
-  if (value >= 0.45) return "none";
-  return "lower";
-}
-
-// Zone value-ranges, matching spectrumZoneFor exactly, and the share of
-// the track each zone occupies. Track shares are presentational/nominal —
-// the "no strong signal" zone covers only a 10-point value range but gets
-// real visual width to hold, since it's a category boundary being drawn,
-// not a proportional slice of the 0-1 value axis.
-const ZONE_LAYOUT: Record<SpectrumZone, { valueMin: number; valueMax: number; trackMin: number; trackMax: number }> = {
-  lower: { valueMin: 0, valueMax: 0.45, trackMin: 0, trackMax: 0.36 },
-  none: { valueMin: 0.45, valueMax: 0.55, trackMin: 0.36, trackMax: 0.64 },
-  stronger: { valueMin: 0.55, valueMax: 1, trackMin: 0.64, trackMax: 1 },
-};
-
-export function spectrumZoneTrackBounds(zone: SpectrumZone): { trackMin: number; trackMax: number } {
-  return ZONE_LAYOUT[zone];
-}
-
-/**
- * Where a value falls within its own zone's value sub-range, as a 0-1
- * fraction — purely presentational (never used for scoring, ordering, or
- * the detail text), and always resolves against the same zone
- * spectrumZoneFor() would assign, so a dot's drawn position can never
- * fall in a different zone than what its own label says.
- */
-export function spectrumWithinZoneT(value: number): number {
-  const { valueMin, valueMax } = ZONE_LAYOUT[spectrumZoneFor(value)];
-  return valueMax > valueMin ? (value - valueMin) / (valueMax - valueMin) : 0.5;
-}
-
 /**
  * Heatmap column headers: first name alone, unless two people on this team
  * share a first name, in which case just those people get a last initial
@@ -224,34 +160,36 @@ export function heatmapDisplayNames(members: TeamMemberScore[]): Record<string, 
   return result;
 }
 
-export function initialsFor(member: TeamMemberScore): string {
-  const first = member.firstName.trim()[0] ?? "";
-  const last = member.lastName.trim()[0] ?? "";
-  return `${first}${last}`.toUpperCase() || "?";
+export interface ProfileDotGroup {
+  members: TeamMemberScore[];
+  minValue: number;
+  maxValue: number;
 }
 
 /**
- * Vertical "lane" per dot so nearly-identical scores on the same spectrum
- * row stay visually distinguishable instead of stacking exactly on top of
- * each other. Lanes are assigned from a sorted pass (closest values claim
- * adjacent lanes first) — this only ever changes a dot's vertical offset,
- * never its horizontal position, which stays a pure function of its value.
+ * Groups team members whose favorability for one cluster sit close enough
+ * together that their dots will visually overlap on the Needs Profile, so
+ * one hover/tap target can report every name at that position instead of
+ * only whichever dot happens to be drawn on top of the others. Dots
+ * themselves are never moved or merged — every member still gets its own
+ * circle at its own true position; this only changes what a hover reveals.
  */
-export function assignSpectrumLanes(values: number[], collisionThreshold = 0.025): number[] {
-  const order = values.map((value, index) => ({ value, index })).sort((a, b) => a.value - b.value);
-  const placed: { value: number; lane: number }[] = [];
-  const lanes = new Array(values.length).fill(0);
-
-  for (const { value, index } of order) {
-    const used = new Set(
-      placed.filter((p) => Math.abs(p.value - value) < collisionThreshold).map((p) => p.lane),
-    );
-    let lane = 0;
-    for (let k = 0; used.has(lane); k++) {
-      lane = k % 2 === 0 ? Math.floor(k / 2) + 1 : -(Math.floor(k / 2) + 1);
+export function groupByProximity(
+  members: TeamMemberScore[],
+  cluster: ClusterKey,
+  threshold = 0.035,
+): ProfileDotGroup[] {
+  const sorted = [...members].sort((a, b) => a.favorability[cluster] - b.favorability[cluster]);
+  const groups: ProfileDotGroup[] = [];
+  for (const m of sorted) {
+    const value = m.favorability[cluster];
+    const last = groups[groups.length - 1];
+    if (last && value - last.maxValue <= threshold) {
+      last.members.push(m);
+      last.maxValue = value;
+    } else {
+      groups.push({ members: [m], minValue: value, maxValue: value });
     }
-    lanes[index] = lane;
-    placed.push({ value, lane });
   }
-  return lanes;
+  return groups;
 }
