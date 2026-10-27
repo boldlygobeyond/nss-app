@@ -319,6 +319,37 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     setRoster(data ?? []);
   };
 
+  // Shared by loadReports (full load) and pollNssStatus (the cheap
+  // recurring one below) so the "most advanced status wins" rule can't
+  // drift between the two call sites.
+  const mergeStatusByEmail = (rows: { user_email: string | null; status: string }[]): Record<string, string> => {
+    const statusByEmail: Record<string, string> = {};
+    rows.forEach((s) => {
+      if (!s.user_email) return;
+      const email = s.user_email.toLowerCase();
+      const existingRank = NSS_STATUS_RANK[statusByEmail[email]] ?? -1;
+      const thisRank = NSS_STATUS_RANK[s.status] ?? -1;
+      if (thisRank >= existingRank) statusByEmail[email] = s.status;
+    });
+    return statusByEmail;
+  };
+
+  // Polled every few seconds (see the effect below) so the roster dot
+  // moves from in-progress to complete on its own while someone's
+  // actually taking the survey, without the admin reloading the page.
+  // Deliberately NOT the same query loadReports runs — that one also
+  // scans every nss_responses row platform-wide to compute each report's
+  // completedAt date for the Reports tab, which doesn't need to happen
+  // every few seconds just to keep a status dot current.
+  const pollNssStatus = async () => {
+    const supabase = createClient();
+    const { data: allSubmissions } = await supabase
+      .from("nss_submissions")
+      .select("user_email, status")
+      .eq("team", slug);
+    setNssStatusByEmail(mergeStatusByEmail(allSubmissions ?? []));
+  };
+
   const loadReports = async () => {
     const supabase = createClient();
     // No status filter here — every submission for this team, so the
@@ -329,15 +360,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
       .select("id, respondent_name, user_email, user_id, status")
       .eq("team", slug);
 
-    const statusByEmail: Record<string, string> = {};
-    (allSubmissions ?? []).forEach((s) => {
-      if (!s.user_email) return;
-      const email = s.user_email.toLowerCase();
-      const existingRank = NSS_STATUS_RANK[statusByEmail[email]] ?? -1;
-      const thisRank = NSS_STATUS_RANK[s.status] ?? -1;
-      if (thisRank >= existingRank) statusByEmail[email] = s.status;
-    });
-    setNssStatusByEmail(statusByEmail);
+    setNssStatusByEmail(mergeStatusByEmail(allSubmissions ?? []));
 
     const submissions = (allSubmissions ?? []).filter((s) => s.status === "completed" || s.status === "report_generated");
 
@@ -472,6 +495,16 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
+
+  // Keeps the roster's status dot live while this page is open — a
+  // respondent finishing the survey in another tab/device flips their dot
+  // from in-progress to complete here on its own, no reload needed.
+  useEffect(() => {
+    if (loading || !team) return;
+    const interval = setInterval(pollNssStatus, 5000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, team, slug]);
 
   useEffect(() => {
     if (tab !== "snapshot" || loading || snapshotScores !== null || snapshotLoadingRef.current) return;
