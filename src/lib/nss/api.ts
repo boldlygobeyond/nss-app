@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ClusterKey } from "./clusters";
 import type { Tally, TopNeed, ClusterScore } from "./surveyEngine";
 import type { ReportData } from "./reportTypes";
+import { latestResponsePerQuestion } from "./responseDedup";
 
 export interface NssSubmission {
   id: string;
@@ -131,7 +132,38 @@ export async function finishSubmission(
   if (error) throw error;
 }
 
-export async function insertResponse(
+/**
+ * Thrown when upsert_nss_response rejects a write because a *more recent*
+ * answer (by the respondent's own click-time, not request-arrival-time)
+ * already exists for the same question — e.g. a delayed/retried request
+ * racing a fresher one. This is not a failure to surface as an error to
+ * the respondent: their latest intended answer is already stored
+ * correctly by the write that won: callers should treat it as a benign
+ * no-op, not retry it, and not log it as a real failure.
+ */
+export class StaleWriteError extends Error {
+  constructor() {
+    super("A more recent answer already exists for this question.");
+    this.name = "StaleWriteError";
+  }
+}
+
+/**
+ * Writes a submission's answer to one question, replacing any prior answer
+ * to the *same* question atomically (delete-then-insert inside one
+ * database transaction, not two separate client requests — see
+ * migration 0021 and NSS_Back_Navigation_And_Duplicate_Fix.md). This
+ * correctly handles correcting a pre-migration row too: the function's
+ * DELETE matches on submission_id+question_id directly, independent of
+ * the partial unique index's own cutoff, so an old row is still found and
+ * replaced rather than left alongside a new one.
+ *
+ * `answeredAt` must be the respondent's own click time (captured
+ * client-side, synchronously, at the moment they chose an answer) — not
+ * whenever this call happens to reach the server — so the function can
+ * tell a genuinely newer answer apart from an older, delayed request.
+ */
+export async function upsertResponse(
   supabase: SupabaseClient,
   params: {
     submissionId: string;
@@ -141,55 +173,55 @@ export async function insertResponse(
     selection: "A" | "B";
     chosenClusters: ClusterKey[];
     rejectedClusters: ClusterKey[];
+    answeredAt: string;
   },
 ): Promise<void> {
-  const { error } = await supabase.from("nss_responses").insert({
-    submission_id: params.submissionId,
-    question_id: params.questionId,
-    original_question_id: params.originalQuestionId ?? null,
-    is_sharpened: params.isSharpened,
-    selection: params.selection,
-    chosen_clusters: params.chosenClusters,
-    rejected_clusters: params.rejectedClusters,
+  const { error } = await supabase.rpc("upsert_nss_response", {
+    p_submission_id: params.submissionId,
+    p_question_id: params.questionId,
+    p_original_question_id: params.originalQuestionId ?? null,
+    p_is_sharpened: params.isSharpened,
+    p_selection: params.selection,
+    p_chosen_clusters: params.chosenClusters,
+    p_rejected_clusters: params.rejectedClusters,
+    p_answered_at: params.answeredAt,
   });
 
-  if (error) throw error;
+  if (error) {
+    if (error.message?.includes("stale_write")) throw new StaleWriteError();
+    throw error;
+  }
+}
+
+export interface StoredResponseRow {
+  question_id: number;
+  original_question_id: number | null;
+  is_sharpened: boolean;
+  selection: "A" | "B";
+  chosen_clusters: ClusterKey[];
+  rejected_clusters: ClusterKey[];
+  answered_at: string;
 }
 
 /**
- * Removes a submission's prior response to a question, so a corrected
- * answer (the respondent used Back and chose again) can be re-inserted in
- * its place rather than left alongside it as a second, contradictory data
- * point. There's no unique constraint on (submission_id, question_id) to
- * upsert against — a respondent answering a question once is the normal
- * case this schema was built for — so this is an explicit delete-then-
- * insert rather than a single atomic write.
+ * All of a submission's stored responses, deduplicated to the most recent
+ * row per question (see responseDedup.ts) — the same accounting used for
+ * scoring, so a client rebuilding its in-session state from the server
+ * (cross-device resume) can't reintroduce a duplicate the DB-level fix
+ * wasn't in place to prevent originally.
  */
-export async function deleteResponseForQuestion(
-  supabase: SupabaseClient,
-  submissionId: string,
-  questionId: number,
-): Promise<void> {
-  const { error } = await supabase
-    .from("nss_responses")
-    .delete()
-    .eq("submission_id", submissionId)
-    .eq("question_id", questionId);
-
-  if (error) throw error;
-}
-
 export async function listResponsesForSubmission(
   supabase: SupabaseClient,
   submissionId: string,
-): Promise<{ chosen_clusters: ClusterKey[]; rejected_clusters: ClusterKey[] }[]> {
+): Promise<StoredResponseRow[]> {
   const { data, error } = await supabase
     .from("nss_responses")
-    .select("chosen_clusters, rejected_clusters")
-    .eq("submission_id", submissionId);
+    .select("question_id, original_question_id, is_sharpened, selection, chosen_clusters, rejected_clusters, answered_at")
+    .eq("submission_id", submissionId)
+    .order("answered_at", { ascending: true });
 
   if (error) throw error;
-  return data as { chosen_clusters: ClusterKey[]; rejected_clusters: ClusterKey[] }[];
+  return latestResponsePerQuestion((data ?? []) as StoredResponseRow[]);
 }
 
 export async function listTeamSubmissions(

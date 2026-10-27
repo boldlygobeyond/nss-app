@@ -22,6 +22,7 @@ import { fetchRosterGridForSpreadsheet } from "@/lib/nss/googlePicker";
 import type { ClusterKey } from "@/lib/nss/clusters";
 import type { BtResponse } from "@/lib/nss/bradleyTerry";
 import { computeTeamMemberScores, computeTeamRowOrder, type TeamMemberScore } from "@/lib/nss/teamScores";
+import { latestResponsePerQuestion } from "@/lib/nss/responseDedup";
 import TeamNeedsHeatmap from "@/components/teams/TeamNeedsHeatmap";
 import NeedsSpectrum from "@/components/teams/NeedsSpectrum";
 import GlobalHeader from "@/components/GlobalHeader";
@@ -375,21 +376,37 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
       const ids = completed.map((r) => r.id);
       const allResponses = await fetchAllRows<{
         submission_id: string;
+        question_id: number;
         chosen_clusters: ClusterKey[];
         rejected_clusters: ClusterKey[];
+        answered_at: string;
       }>((from, to) =>
         supabase
           .from("nss_responses")
-          .select("submission_id, chosen_clusters, rejected_clusters")
+          .select("submission_id, question_id, chosen_clusters, rejected_clusters, answered_at")
           .in("submission_id", ids)
           .order("id")
           .range(from, to),
       );
-      const bySubmission = new Map<string, BtResponse[]>();
+      const rawBySubmission = new Map<string, typeof allResponses>();
       allResponses.forEach((r) => {
-        const list = bySubmission.get(r.submission_id) ?? [];
-        list.push({ chosen_clusters: r.chosen_clusters, rejected_clusters: r.rejected_clusters });
-        bySubmission.set(r.submission_id, list);
+        const list = rawBySubmission.get(r.submission_id) ?? [];
+        list.push(r);
+        rawBySubmission.set(r.submission_id, list);
+      });
+      // Deduplicated per submission (a question can have more than one
+      // stored row for the same submission — see
+      // NSS_Back_Navigation_And_Duplicate_Fix.md) before anyone's responses feed into
+      // team scoring, same rule every other scoring consumer uses.
+      const bySubmission = new Map<string, BtResponse[]>();
+      rawBySubmission.forEach((rows, submissionId) => {
+        bySubmission.set(
+          submissionId,
+          latestResponsePerQuestion(rows).map((r) => ({
+            chosen_clusters: r.chosen_clusters,
+            rejected_clusters: r.rejected_clusters,
+          })),
+        );
       });
 
       const members = completed

@@ -29,21 +29,36 @@ import {
   createSubmission,
   updateSubmissionProgress,
   finishSubmission,
-  insertResponse,
-  deleteResponseForQuestion,
+  upsertResponse,
+  StaleWriteError,
   findInProgressSubmission,
   listResponsesForSubmission,
 } from "@/lib/nss/api";
+import {
+  applyAnswerToHistory,
+  applySkipToHistory,
+  sharpenedForEntry,
+  latestDecisiveEntries,
+  type AnsweredEntry,
+  type QuestionHistoryEntry,
+} from "@/lib/nss/questionHistory";
 import NovaGreeting from "@/components/survey/NovaGreeting";
 import QuestionCard from "@/components/survey/QuestionCard";
 import ProgressIndicator from "@/components/survey/ProgressIndicator";
 
 const STORAGE_KEY = "nss_survey_state";
-const STATE_VERSION = 2;
+// Bumped: the persisted shape changed from a flat answered-only array
+// (AnsweredDetail[]) to a richer per-question history that also tracks
+// skips (QuestionHistoryEntry[], discriminated by `status`) — an old
+// stored blob wouldn't have `status` on its entries and would silently
+// misbehave if loaded as the new shape, so it's invalidated like any
+// other incompatible version.
+const STATE_VERSION = 3;
 const HARD_STOP = 50;
-// Local-only test flag for the Oct 2026 rebalance (new 86-question bank +
-// Bradley-Terry delivery/scoring). Never set in the deployed environment —
-// see questions.ts's matching useNewBank flag.
+// Switches between the legacy win-rate engine and the Oct 2026 rebalance
+// (new 86-question bank + Bradley-Terry delivery/scoring). Live in
+// production today (confirmed via `vercel env ls`) — see questions.ts's
+// matching useNewBank flag, which must agree with this one.
 const USE_BT_ENGINE = process.env.NEXT_PUBLIC_NSS_ENGINE === "bt";
 
 function serializeDeliveryState(state: DeliveryState) {
@@ -51,17 +66,6 @@ function serializeDeliveryState(state: DeliveryState) {
 }
 function deserializeDeliveryState(raw: ReturnType<typeof serializeDeliveryState>): DeliveryState {
   return { ...raw, pendingValidation: new Set(raw.pendingValidation) };
-}
-
-interface AnsweredDetail {
-  question_id: number;
-  question_text: string;
-  user_selection: "A" | "B";
-  chosen_clusters: string[];
-  rejected_clusters: string[];
-  mapped_clusters: string[];
-  is_sharpened_question: boolean;
-  original_question_id?: number;
 }
 
 interface SavedState {
@@ -73,7 +77,7 @@ interface SavedState {
   questionIndex: number;
   tally: Tally;
   questionsAnswered: number;
-  answeredDetails: AnsweredDetail[];
+  questionHistory: QuestionHistoryEntry[];
   isSharpened: boolean;
   btResponses: BtResponse[];
   deliveryState: ReturnType<typeof serializeDeliveryState>;
@@ -158,12 +162,45 @@ export default function SurveyClient() {
   const [questionIndex, setQuestionIndex] = useState(0);
   const [isSharpened, setIsSharpened] = useState(false);
   const [questionsAnswered, setQuestionsAnswered] = useState(0);
-  const [answeredDetails, setAnsweredDetails] = useState<AnsweredDetail[]>([]);
+  const [questionHistory, setQuestionHistory] = useState<QuestionHistoryEntry[]>([]);
   const [lastQuestionId, setLastQuestionId] = useState<number | null>(null);
   const [btResponses, setBtResponses] = useState<BtResponse[]>([]);
   const [deliveryState, setDeliveryState] = useState<DeliveryState>(initDeliveryState());
+  const [writeFailureNotice, setWriteFailureNotice] = useState(false);
 
   const currentQuestion = sequence[questionIndex] || null;
+  const currentHistoryEntry = currentQuestion
+    ? (questionHistory.find((h) => h.question_id === currentQuestion.id) ?? null)
+    : null;
+  const isReviewing = currentHistoryEntry !== null;
+  // True while sharpened wording is on screen but hasn't actually been
+  // committed as the answer for this question yet — a fresh "It Depends"
+  // reask with nothing chosen (currentHistoryEntry is null), *or*
+  // reconsidering a question that's on record as answered/skipped under
+  // *standard* wording, where clicking "It Depends" to look at the
+  // sharpened phrasing shouldn't itself count as having left that
+  // standard answer. handleBack cancels out of this straight to standard
+  // wording of the *same* question rather than the previous one; the
+  // option-selected/skipped indicators below also use it so nothing
+  // recorded under a *different* wording is shown as chosen here.
+  const viewingUncommittedSharpened = isSharpened && currentHistoryEntry?.is_sharpened_question !== true;
+  // True only for the single newest question — the one about to trigger a
+  // stop-check and/or pull the next adaptive question once answered.
+  // Reviewing anything earlier than this always just advances through the
+  // sequence that's already there (see handleAnswer/handleReviewNext) —
+  // "review navigation should feel predictable and chronological," not
+  // jump to the end or re-trigger the adaptive engine mid-review.
+  const isFrontier = questionIndex === sequence.length - 1;
+
+  // Restoring the question on screen to how the respondent last left it
+  // (standard vs. sharpened wording) is done explicitly at every call site
+  // that navigates to a *different* question (handleBack, handleReviewNext,
+  // and the advance branches in handleAnswer/handleSkip) via sharpenedForEntry
+  // (questionHistory.ts), rather than derived in an effect keyed on the
+  // question id — an effect would also need to not re-fire while manually
+  // toggling "It Depends" on the *same* question, and setting state
+  // synchronously in an effect body is the kind of thing that invites
+  // cascading renders anyway.
 
   // QuestionCard's exit animation (AnimatePresence mode="wait", ~350ms)
   // keeps the outgoing card's buttons mounted and clickable while it fades
@@ -171,7 +208,9 @@ export default function SurveyClient() {
   // the *previous* question's stale closure — confirmed in testing (two
   // questions each got answered twice, back to back, with identical
   // selections). Guards both handlers; clears once the next question
-  // actually renders.
+  // actually renders. QuestionCard's exit transition also sets
+  // pointerEvents: "none" the instant it starts leaving, closing the gap
+  // at the animation level too, not just here.
   //
   // Confirmed by reproducing it directly: if anything inside handleAnswer
   // throws after processingRef is set but before the state updates that
@@ -206,14 +245,11 @@ export default function SurveyClient() {
     return true;
   }, []);
 
-  // Per-question write queue: a correction's delete-then-insert and the
-  // original answer's insert are both independent, unawaited network calls
-  // with no inherent ordering — confirmed by testing (a fast correction's
-  // delete fired, found nothing yet, then the slower original insert
-  // landed last, leaving both rows). Chaining each question's writes onto
-  // whatever is already pending for that same question_id guarantees they
-  // always land in the order they were initiated, regardless of individual
-  // request timing.
+  // Per-question write queue — same-session ordering on top of the
+  // database's own guarantee (migration 0021's upsert_nss_response does a
+  // delete-then-insert inside one transaction, with explicit stale-write
+  // rejection by the respondent's own click time), not the primary
+  // correctness mechanism itself anymore.
   const pendingWritesRef = useRef<Map<number, Promise<void>>>(new Map());
   const queueWrite = useCallback((questionId: number, write: () => Promise<void>) => {
     const prior = pendingWritesRef.current.get(questionId) ?? Promise.resolve();
@@ -221,6 +257,33 @@ export default function SurveyClient() {
     pendingWritesRef.current.set(questionId, chained);
     return chained;
   }, []);
+
+  // Writes one response, retrying once on a genuine failure (StaleWriteError
+  // is not a failure — it means a newer answer already won, nothing to do)
+  // before surfacing it: logged to the console always, and shown as a
+  // small, non-blocking notice to the respondent only if the retry also
+  // fails, rather than failing silently.
+  const writeResponseWithRetry = useCallback(
+    async (params: Parameters<typeof upsertResponse>[1]) => {
+      try {
+        await upsertResponse(supabase, params);
+      } catch (err) {
+        if (err instanceof StaleWriteError) {
+          console.info(`[SurveyClient] write for question ${params.questionId} superseded by a newer answer; ignoring.`);
+          return;
+        }
+        console.error(`[SurveyClient] failed to save answer for question ${params.questionId}, retrying once:`, err);
+        try {
+          await upsertResponse(supabase, params);
+        } catch (retryErr) {
+          if (retryErr instanceof StaleWriteError) return;
+          console.error(`[SurveyClient] retry also failed for question ${params.questionId}:`, retryErr);
+          setWriteFailureNotice(true);
+        }
+      }
+    },
+    [supabase],
+  );
 
   // ── Bootstrap: load questions + auth + resume state ──────────────────────
   useEffect(() => {
@@ -256,7 +319,12 @@ export default function SurveyClient() {
 
       // Same-browser resume: fast path, works offline of any server round
       // trip — but only trust it once it's confirmed to be *this* user's
-      // own submission.
+      // own submission. Skip entries (status: "skipped") only ever live
+      // here — they're never written server-side (see handleSkip) — so a
+      // skipped question's restored wording/badge only survives a reload
+      // on the *same* browser with intact localStorage, not a resume from
+      // a different device. That's a real, acknowledged limitation (see
+      // the implementation report), not an oversight.
       const saved = loadSavedState();
       if (saved?.sequenceIds?.length && saved.submissionId && saved.submissionId === inProgress?.id) {
         setSequence(sequenceFromIds(qs, saved.sequenceIds));
@@ -267,7 +335,7 @@ export default function SurveyClient() {
         setTally(saved.tally);
         setQuestionIndex(saved.questionIndex);
         setQuestionsAnswered(saved.questionsAnswered);
-        setAnsweredDetails(saved.answeredDetails);
+        setQuestionHistory(saved.questionHistory ?? []);
         setIsSharpened(saved.isSharpened);
         if (USE_BT_ENGINE) {
           setBtResponses(saved.btResponses ?? []);
@@ -282,12 +350,16 @@ export default function SurveyClient() {
       // browser, cleared storage, someone else's leftover state — but the
       // server still has an in-progress submission for this account;
       // rebuild playable state from it rather than restarting from question
-      // one. answeredDetails/isSharpened aren't persisted server-side, but
-      // neither is ever read again after this point (reports are built from
-      // win_loss_tally/top_needs/scores, not from this array), so empty/
-      // false is exact, not a lossy approximation. questionIndex ===
-      // questionsAnswered always holds at rest: both start at 0 and
-      // increment together on every answer.
+      // one. questionHistory IS read again (handleAnswer's correction/
+      // confirmation detection, keyed on question_id) — rebuilt from the
+      // submission's own stored responses (already deduplicated to one row
+      // per question — see responseDedup.ts) joined against the question
+      // bank. Skips aren't persisted server-side at all, so a question
+      // skipped before this resume point can't be distinguished from
+      // "not yet reached" here — it'll show as fresh, not as a restored
+      // skip; a real but accepted limitation of not adding server-side
+      // skip storage for this change. questionIndex === questionsAnswered
+      // always holds at rest: both start at 0 and increment together.
       if (inProgress?.question_sequence?.length) {
         setSequence(sequenceFromIds(qs, inProgress.question_sequence));
         setUsedIds(new Set(inProgress.question_sequence));
@@ -297,15 +369,34 @@ export default function SurveyClient() {
         setTally(inProgress.win_loss_tally);
         setQuestionIndex(inProgress.questions_answered);
         setQuestionsAnswered(inProgress.questions_answered);
-        setAnsweredDetails([]);
+        const rows = await listResponsesForSubmission(supabase, inProgress.id);
+        const reconstructed: QuestionHistoryEntry[] = rows
+          .map((r): AnsweredEntry | null => {
+            const q = qs.find((qq) => qq.id === r.question_id);
+            if (!q) return null;
+            const version = r.is_sharpened ? q.sharpened : q.standard;
+            return {
+              question_id: r.question_id,
+              status: "answered",
+              question_text: version.question,
+              user_selection: r.selection,
+              chosen_clusters: r.chosen_clusters,
+              rejected_clusters: r.rejected_clusters,
+              mapped_clusters: q.mappedClusters,
+              is_sharpened_question: r.is_sharpened,
+              ...(r.original_question_id ? { original_question_id: r.original_question_id } : {}),
+              answered_at: r.answered_at,
+            };
+          })
+          .filter((d): d is AnsweredEntry => d !== null);
+        setQuestionHistory(reconstructed);
         setIsSharpened(false);
         if (USE_BT_ENGINE) {
-          // btResponses can be rebuilt exactly from the stored rows, but
-          // is_sharpened/ordering aren't selected there today, so the
-          // validation/staleness bookkeeping in deliveryState can't be —
-          // acceptable here since this path is cross-device resume of an
-          // old submission, not the fresh test run this flag is for.
-          const rows = await listResponsesForSubmission(supabase, inProgress.id);
+          // is_sharpened/ordering for the *adaptive* questions aren't
+          // replayed into deliveryState here (validation/staleness
+          // bookkeeping starts fresh), acceptable for this cross-device
+          // resume path — it's not the fresh test run that bookkeeping
+          // exists to support.
           setBtResponses(rows);
           setDeliveryState(initDeliveryState(inProgress.questions_answered));
         }
@@ -332,7 +423,7 @@ export default function SurveyClient() {
       questionIndex,
       tally,
       questionsAnswered,
-      answeredDetails,
+      questionHistory,
       isSharpened,
       btResponses,
       deliveryState: serializeDeliveryState(deliveryState),
@@ -346,7 +437,7 @@ export default function SurveyClient() {
     questionIndex,
     tally,
     questionsAnswered,
-    answeredDetails,
+    questionHistory,
     isSharpened,
     btResponses,
     deliveryState,
@@ -460,78 +551,75 @@ export default function SurveyClient() {
       const [clusterA, clusterB] = currentQuestion.mappedClusters;
       const chosenClusters = choice === "A" ? [clusterA] : [clusterB];
       const rejectedClusters = choice === "A" ? [clusterB] : [clusterA];
+      const answeredAt = new Date().toISOString();
 
-      // Back lets a respondent return to an already-answered question and
-      // choose again. The original answer previously stayed on top as a
-      // second, independent data point — both counted in scoring, and it
-      // silently consumed an extra slot from the fixed 50-question budget
-      // without asking anything new. Only the final choice should count:
-      // detect the correction and replace the prior entry instead of
-      // appending.
-      const priorIndex = answeredDetails.findIndex((d) => d.question_id === currentQuestion.id);
-      const isCorrection = priorIndex !== -1;
+      const { history: newHistory, entry, isConfirmation, decisiveCountDelta } = applyAnswerToHistory({
+        history: questionHistory,
+        questionId: currentQuestion.id,
+        questionText: (isSharpened ? currentQuestion.sharpened : currentQuestion.standard).question,
+        choice,
+        chosenClusters,
+        rejectedClusters,
+        mappedClusters: currentQuestion.mappedClusters,
+        isSharpened,
+        originalQuestionId: lastQuestionId,
+        answeredAt,
+      });
+      if (!isConfirmation) setQuestionHistory(newHistory);
 
-      const version = isSharpened ? currentQuestion.sharpened : currentQuestion.standard;
-      const detail: AnsweredDetail = {
-        question_id: currentQuestion.id,
-        question_text: version.question,
-        user_selection: choice,
-        chosen_clusters: chosenClusters,
-        rejected_clusters: rejectedClusters,
-        mapped_clusters: currentQuestion.mappedClusters,
-        is_sharpened_question: isSharpened,
-        ...(isSharpened && lastQuestionId ? { original_question_id: lastQuestionId } : {}),
-      };
-      const newDetails = isCorrection
-        ? answeredDetails.map((d, i) => (i === priorIndex ? detail : d))
-        : [...answeredDetails, detail];
-      setAnsweredDetails(newDetails);
-
-      // Rebuilt from newDetails (the corrected source of truth) rather than
+      // Rebuilt from newHistory (the corrected source of truth) rather than
       // patched incrementally — a correction replaces one entry in the
       // middle of the history, which an append-only update can't express
       // without drifting out of sync with what was actually answered.
-      const newTally = newDetails.reduce(
+      // Skipped entries contribute nothing to scoring.
+      const answeredOnly = latestDecisiveEntries(newHistory);
+      const newTally = answeredOnly.reduce(
         (t, d) => recordAnswer(t, d.chosen_clusters as ClusterKey[], d.rejected_clusters as ClusterKey[]),
         initTally(),
       );
       setTally(newTally);
 
       const newBtResponses: BtResponse[] = USE_BT_ENGINE
-        ? newDetails.map((d) => ({
+        ? answeredOnly.map((d) => ({
             chosen_clusters: d.chosen_clusters as ClusterKey[],
             rejected_clusters: d.rejected_clusters as ClusterKey[],
           }))
         : btResponses;
       if (USE_BT_ENGINE) setBtResponses(newBtResponses);
 
-      // Changing your mind is itself a signal of uncertainty on this pair —
-      // flag it the same way a sharpened "it depends" answer does, so the
-      // delivery logic re-tests the pair with a different question instead
-      // of treating the correction as if it were always confident.
-      const outcomeState = USE_BT_ENGINE
-        ? applyAnswerOutcome(deliveryState, currentQuestion.mappedClusters, isSharpened || isCorrection)
-        : deliveryState;
-      if (USE_BT_ENGINE) setDeliveryState(outcomeState);
+      // Validation is triggered by the explicit "It Depends" signal alone
+      // — not by every correction. A correction given directly (picking
+      // the other standard-wording option, no "It Depends") isn't
+      // necessarily evidence of contextual uncertainty; it's just as
+      // likely a plain fix of an earlier misclick, and treating every such
+      // fix as equivalent to "it depends" would spend adaptive questions
+      // re-probing pairs the respondent was never actually unsure about.
+      // Reconsidering *through* It Depends — whether on a fresh question
+      // or while reviewing one answered earlier — still triggers it, same
+      // as it always has: that's the respondent's own explicit signal,
+      // not an inference from the mere fact that something changed.
+      const outcomeState =
+        USE_BT_ENGINE && !isConfirmation
+          ? applyAnswerOutcome(deliveryState, currentQuestion.mappedClusters, isSharpened)
+          : deliveryState;
+      if (USE_BT_ENGINE && !isConfirmation) setDeliveryState(outcomeState);
 
-      const newAnswered = isCorrection ? questionsAnswered : questionsAnswered + 1;
+      // A decisive count only changes when a question that *didn't*
+      // already have a decisive answer gets one — a fresh question, or a
+      // previously-skipped one now being answered. A correction to an
+      // already-decisive answer, or a confirmation, leaves the count
+      // untouched either way.
+      const newAnswered = questionsAnswered + decisiveCountDelta;
       setQuestionsAnswered(newAnswered);
 
       if (!isSharpened) setLastQuestionId(currentQuestion.id);
-      setIsSharpened(false);
 
-      if (submissionId) {
+      if (submissionId && !isConfirmation) {
         const questionId = currentQuestion.id;
-        const originalQuestionId = detail.original_question_id ?? null;
-        const isSharpenedFlag = detail.is_sharpened_question;
-        // Always delete-then-insert, even on a first answer (a no-op
-        // delete) — idempotent and self-correcting, so this queued write
-        // always leaves exactly one row for this question matching
-        // whatever was answered last, regardless of how isCorrection was
-        // computed on the client.
-        queueWrite(questionId, async () => {
-          await deleteResponseForQuestion(supabase, submissionId, questionId);
-          await insertResponse(supabase, {
+        const originalQuestionId = entry.original_question_id ?? null;
+        const isSharpenedFlag = entry.is_sharpened_question;
+        queueWrite(questionId, () =>
+          writeResponseWithRetry({
             submissionId,
             questionId,
             originalQuestionId,
@@ -539,8 +627,25 @@ export default function SurveyClient() {
             selection: choice,
             chosenClusters,
             rejectedClusters,
-          });
-        });
+            answeredAt,
+          }),
+        );
+      }
+
+      // Reviewing an earlier question (not the frontier) always just steps
+      // forward through the sequence that's already there — no stop-check,
+      // no pulling a new adaptive question. Those only make sense once the
+      // respondent is back at the newest question again, extending the
+      // survey for real. This is also what makes review feel chronological
+      // rather than jumping around: Back to question 22 from 26, correct
+      // it, and the very next thing shown is 23 — not back to 26.
+      if (!isFrontier) {
+        const nextIdx = questionIndex + 1;
+        if (nextIdx < sequence.length) {
+          setIsSharpened(sharpenedForEntry(newHistory, sequence[nextIdx].id));
+          setQuestionIndex(nextIdx);
+        }
+        return;
       }
 
       const stopNow = USE_BT_ENGINE
@@ -553,6 +658,7 @@ export default function SurveyClient() {
 
       const nextIdx = questionIndex + 1;
       if (nextIdx < sequence.length) {
+        setIsSharpened(sharpenedForEntry(newHistory, sequence[nextIdx].id));
         setQuestionIndex(nextIdx);
         return;
       }
@@ -565,7 +671,7 @@ export default function SurveyClient() {
           outcomeState,
           newAnswered,
           sequence.length === 21,
-          newDetails,
+          answeredOnly,
         );
         if (!next) {
           finishSurvey(newTally, newAnswered, sequence, newBtResponses);
@@ -577,6 +683,7 @@ export default function SurveyClient() {
         setSequence(newSeq);
         setUsedIds(newUsed);
         setDeliveryState(next.nextState);
+        setIsSharpened(false);
         setQuestionIndex(nextIdx);
         return;
       }
@@ -591,6 +698,7 @@ export default function SurveyClient() {
       block.forEach((q) => newUsed.add(q.id));
       setSequence(newSeq);
       setUsedIds(newUsed);
+      setIsSharpened(false);
       setQuestionIndex(nextIdx);
       } catch (error) {
         // The unstick timeout recovers either way, but log the real cause
@@ -600,13 +708,12 @@ export default function SurveyClient() {
     },
     [
       currentQuestion,
-      tally,
+      isFrontier,
       questionsAnswered,
       isSharpened,
       lastQuestionId,
-      answeredDetails,
+      questionHistory,
       submissionId,
-      supabase,
       questionIndex,
       sequence,
       usedIds,
@@ -616,18 +723,27 @@ export default function SurveyClient() {
       deliveryState,
       beginProcessing,
       queueWrite,
+      writeResponseWithRetry,
     ],
   );
 
-  // ── Skip / Back / Save & Exit ──────────────────────────────────────────────
+  // ── Skip / Review-Next / Back / Save & Exit ───────────────────────────────
   const handleItDepends = useCallback(() => setIsSharpened(true), []);
 
   const handleSkip = useCallback(() => {
-    if (!beginProcessing()) return;
+    if (!currentQuestion || !beginProcessing()) return;
     try {
-      setIsSharpened(false);
+      const newHistory = applySkipToHistory({
+        history: questionHistory,
+        questionId: currentQuestion.id,
+        mappedClusters: currentQuestion.mappedClusters,
+        isSharpened,
+      });
+      setQuestionHistory(newHistory);
+
       const nextIdx = questionIndex + 1;
       if (nextIdx < sequence.length) {
+        setIsSharpened(sharpenedForEntry(newHistory, sequence[nextIdx].id));
         setQuestionIndex(nextIdx);
         return;
       }
@@ -640,7 +756,7 @@ export default function SurveyClient() {
           deliveryState,
           questionsAnswered,
           sequence.length === 21,
-          answeredDetails,
+          latestDecisiveEntries(newHistory),
         );
         if (!next) {
           finishSurvey(tally, questionsAnswered, sequence, btResponses);
@@ -652,6 +768,7 @@ export default function SurveyClient() {
         setSequence(newSeq);
         setUsedIds(newUsed);
         setDeliveryState(next.nextState);
+        setIsSharpened(false);
         setQuestionIndex(nextIdx);
         return;
       }
@@ -666,11 +783,14 @@ export default function SurveyClient() {
       block.forEach((q) => newUsed.add(q.id));
       setSequence(newSeq);
       setUsedIds(newUsed);
+      setIsSharpened(false);
       setQuestionIndex(nextIdx);
     } catch (error) {
       console.error("[SurveyClient] handleSkip failed:", error);
     }
   }, [
+    currentQuestion,
+    isSharpened,
     questionIndex,
     sequence,
     questions,
@@ -680,20 +800,38 @@ export default function SurveyClient() {
     finishSurvey,
     btResponses,
     deliveryState,
-    answeredDetails,
+    questionHistory,
     beginProcessing,
   ]);
 
+  // Advances past a reviewed (already-answered or already-skipped)
+  // question without touching it — no write, no count change, no
+  // validation trigger, since nothing about it changed.
+  const handleReviewNext = useCallback(() => {
+    if (!beginProcessing()) return;
+    try {
+      const nextIdx = questionIndex + 1;
+      if (nextIdx < sequence.length) {
+        setIsSharpened(sharpenedForEntry(questionHistory, sequence[nextIdx].id));
+        setQuestionIndex(nextIdx);
+      }
+    } catch (error) {
+      console.error("[SurveyClient] handleReviewNext failed:", error);
+    }
+  }, [questionIndex, sequence, questionHistory, beginProcessing]);
+
   const handleBack = useCallback(() => {
-    if (isSharpened) {
+    if (viewingUncommittedSharpened) {
       setIsSharpened(false);
     } else if (questionIndex > 0) {
-      setQuestionIndex(questionIndex - 1);
+      const prevIdx = questionIndex - 1;
+      setIsSharpened(sharpenedForEntry(questionHistory, sequence[prevIdx].id));
+      setQuestionIndex(prevIdx);
     } else {
       setPhase("greeting");
       setGreetingStep(2);
     }
-  }, [isSharpened, questionIndex]);
+  }, [viewingUncommittedSharpened, questionIndex, questionHistory, sequence]);
 
   const handleGreetingBack = () => {
     if (greetingStep === 0) router.push("/");
@@ -737,6 +875,22 @@ export default function SurveyClient() {
 
   return (
     <div className="flex-1 max-w-3xl w-full mx-auto px-4 py-6 flex flex-col">
+      {writeFailureNotice && (
+        <div
+          role="status"
+          className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
+          <span>Your last answer may not have saved. Check your connection and try again if this continues.</span>
+          <button
+            onClick={() => setWriteFailureNotice(false)}
+            className="shrink-0 text-destructive/70 hover:text-destructive"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       <div className="mb-3">
         <button
           onClick={handleBack}
@@ -756,6 +910,14 @@ export default function SurveyClient() {
           onAnswer={handleAnswer}
           onItDepends={handleItDepends}
           onSkip={handleSkip}
+          reviewing={isReviewing}
+          selectedOption={
+            currentHistoryEntry?.status === "answered" && currentHistoryEntry.is_sharpened_question === isSharpened
+              ? currentHistoryEntry.user_selection
+              : null
+          }
+          skipped={currentHistoryEntry?.status === "skipped" && currentHistoryEntry.is_sharpened_question === isSharpened}
+          onNext={handleReviewNext}
         />
       )}
 

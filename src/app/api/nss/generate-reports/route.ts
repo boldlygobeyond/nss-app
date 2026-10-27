@@ -14,6 +14,7 @@ import { renderReportPdf } from "@/lib/nss/pdfRender";
 import { cacheReportPdf } from "@/lib/nss/pdfStorage";
 import { computePairwiseMatchups, type TopNeed } from "@/lib/nss/surveyEngine";
 import { rankByBradleyTerry, top3Stability } from "@/lib/nss/bradleyTerry";
+import { latestResponsePerQuestion } from "@/lib/nss/responseDedup";
 import type { ReportData } from "@/lib/nss/reportTypes";
 
 // Hobby-plan ceiling without Fluid Compute is 60s — this route does a
@@ -80,19 +81,25 @@ export async function POST(request: Request) {
   const anthropic = new Anthropic();
 
   try {
-    const { data: responses, error: responsesError } = await supabase
+    const { data: rawResponses, error: responsesError } = await supabase
       .from("nss_responses")
-      .select("chosen_clusters, rejected_clusters, is_sharpened")
+      .select("question_id, chosen_clusters, rejected_clusters, is_sharpened, answered_at")
       .eq("submission_id", submissionId);
     if (responsesError) throw responsesError;
+    // A question can have more than one stored row (Back navigation across
+    // a slow write, a reload mid-answer — see NSS_Back_Navigation_And_Duplicate_Fix.md).
+    // Collapsing to the most recent answer per question before any of
+    // these feed into scoring keeps a stray duplicate from silently
+    // inflating a pairing's weight or contradicting itself in the matrix.
+    const responses = latestResponsePerQuestion(rawResponses ?? []);
 
-    const matchups = computePairwiseMatchups(responses ?? []);
+    const matchups = computePairwiseMatchups(responses);
     // "Top 3" is a hard cutoff over a continuous ranking — #4 can be a
     // near-tie with #3. This resamples the person's own real answers to
     // find out, so the prompt can tell the model to say so when true
     // instead of presenting a toss-up as a clear result.
-    const btRanked = rankByBradleyTerry(responses ?? []);
-    const stability = top3Stability(responses ?? []);
+    const btRanked = rankByBradleyTerry(responses);
+    const stability = top3Stability(responses);
     const rankStability = { stability: stability.stability, fourthCluster: btRanked[3]?.cluster ?? null };
 
     const prompt = useBradleyTerry
@@ -102,7 +109,7 @@ export async function POST(request: Request) {
           pronouns: (submission.pronouns as string) || "they/them",
           btRanked,
           matchups,
-          responses: responses ?? [],
+          responses,
         })
       : buildReportPrompt({
           firstName,
