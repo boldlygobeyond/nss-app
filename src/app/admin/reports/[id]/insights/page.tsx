@@ -75,7 +75,7 @@ function JourneyCell({
       ref={cellRef}
       onClick={onSelect}
       title={`Q${entry.position} · ${entry.pair}`}
-      className={`relative w-7 h-9 rounded-md border text-[8px] leading-[1.15] font-mono font-medium flex flex-col items-center justify-center transition-transform ${STATUS_STYLES[entry.status]} ${
+      className={`relative w-9 h-11 rounded-md border text-[10px] leading-[1.2] font-mono font-medium flex flex-col items-center justify-center transition-transform ${STATUS_STYLES[entry.status]} ${
         entry.tier ? TIER_UNDERLINE[entry.tier] ?? "" : ""
       } ${flash ? "scale-125 ring-2 ring-primary" : "hover:scale-110 hover:ring-2 hover:ring-primary/60"}`}
     >
