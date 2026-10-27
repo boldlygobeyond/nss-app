@@ -34,6 +34,11 @@ const nextConfig: NextConfig = {
         destination: "/?source=atlas",
         permanent: false,
       },
+      {
+        source: "/linkedin",
+        destination: "/?source=linkedin",
+        permanent: false,
+      },
     ];
   },
 };
