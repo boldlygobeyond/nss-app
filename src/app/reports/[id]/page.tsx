@@ -192,7 +192,6 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
             reportData={submission.report_data}
             scores={submission.scores}
             firstName={submission.respondent_name}
-            pronouns={submission.pronouns}
             isTeam={!!submission.team}
           />
 

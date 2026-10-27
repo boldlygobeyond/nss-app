@@ -95,7 +95,6 @@ export default function PrintClient({ id }: { id: string }) {
           reportData={submission.report_data}
           scores={submission.scores}
           firstName={submission.respondent_name}
-          pronouns={submission.pronouns}
           variant="plain"
           forPdf
         />
