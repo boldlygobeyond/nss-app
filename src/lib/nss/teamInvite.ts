@@ -52,5 +52,24 @@ export async function createTeamInvite(params: {
     throw error ?? new Error("Could not generate invite link");
   }
 
+  // An existing account never gets team/manager_email seeded by the
+  // metadata above (Supabase ignores it, and handle_new_user only ever
+  // runs once, on insert) — so without this, anyone who already had an
+  // account before being invited to a team (the public lead funnel, a
+  // different earlier team, a retake) keeps whatever team their profile
+  // already had, often null. Every downstream submission for them then
+  // gets the wrong (or no) team: invisible on this team's roster/reports,
+  // and rendered as the public lead-funnel report instead of the team
+  // one. An admin explicitly inviting this email to `params.team` is the
+  // authoritative signal of their current team, so sync it here on every
+  // invite, new account or not.
+  if (existingProfile) {
+    const { error: profileUpdateError } = await supabase
+      .from("user_profiles")
+      .update({ team: params.team, manager_email: params.managerEmail })
+      .eq("id", existingProfile.id);
+    if (profileUpdateError) throw profileUpdateError;
+  }
+
   return { email: trimmedEmail, hashedToken: data.properties.hashed_token, isNewAccount: !existingProfile };
 }
