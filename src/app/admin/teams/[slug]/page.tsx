@@ -12,6 +12,8 @@ import {
   RotateCw,
   AlertTriangle,
   Trash2,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, listAllProfiles } from "@/lib/nss/userProfiles";
@@ -180,22 +182,46 @@ function buildOrgForest(roster: RosterEntry[], reportsByEmail: Record<string, Re
   );
 }
 
+function countDescendants(node: OrgTreeNode): number {
+  return node.children.reduce((sum, c) => sum + 1 + countDescendants(c), 0);
+}
+
 function OrgBox({
   node,
   profiles,
+  hasChildren,
+  isCollapsed,
+  onToggleCollapse,
 }: {
   node: OrgTreeNode;
   profiles: Record<string, { first_name: string | null; last_name: string | null }>;
+  hasChildren: boolean;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
 }) {
   const { entry, report } = node;
 
+  // Straddles the box's bottom edge so it reads as part of the connector
+  // line rather than part of the card — only rendered when there's
+  // actually a branch underneath to expand or collapse.
+  const toggleButton = hasChildren && (
+    <button
+      onClick={onToggleCollapse}
+      title={isCollapsed ? "Expand this branch" : "Collapse this branch"}
+      className="absolute -bottom-3 left-1/2 -translate-x-1/2 z-10 w-6 h-6 rounded-full bg-card border border-border shadow-sm flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
+    >
+      {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+    </button>
+  );
+
   if (!entry) {
     return (
-      <div className="bg-secondary/40 border border-dashed border-border rounded-xl p-3 w-44 text-center shrink-0">
+      <div className="relative bg-secondary/40 border border-dashed border-border rounded-xl p-3 w-44 text-center shrink-0">
         <p className="text-sm font-medium text-foreground truncate" title={node.externalManagerEmail ?? undefined}>
           {node.externalManagerEmail}
         </p>
         <p className="text-xs text-muted-foreground mt-0.5">Manager (not on roster)</p>
+        {toggleButton}
       </div>
     );
   }
@@ -205,7 +231,7 @@ function OrgBox({
     : `${entry.first_name} ${entry.last_name}`.trim();
 
   return (
-    <div className="bg-card border border-border/50 rounded-xl p-3 w-44 text-center shadow-sm shrink-0">
+    <div className="relative bg-card border border-border/50 rounded-xl p-3 w-44 text-center shadow-sm shrink-0">
       <p className="text-sm font-medium text-foreground truncate" title={fullName}>
         {fullName}
       </p>
@@ -230,34 +256,64 @@ function OrgBox({
       ) : (
         <p className="text-xs text-muted-foreground mt-0.5">No report yet</p>
       )}
+      {toggleButton}
     </div>
   );
 }
 
-// A shared horizontal divider under the parent, then its children in a
-// flex-wrap group below — unlike a classic single-row connector-line org
-// chart, this keeps reading as "these roll up to the one box above" even
-// once a big team wraps onto several lines, and it never needs its own
-// scrollbar since wrapping absorbs any width overflow.
+// Classic two-tier CSS connector tree: the <ul> draws one trunk line down
+// from the parent box, then each <li> draws an elbow (a horizontal half-
+// segment joining it to its neighbor, plus a vertical drop into its own
+// child box) via ::before/::after, trimmed at the first/last/only child so
+// the bus line never overshoots the outermost children. This makes each
+// line trace a specific reports-to relationship instead of one shared
+// divider standing in for "all of these roll up to the box above".
+// Children render in a single non-wrapping row (the admin collapses
+// branches to manage width instead
+// of the row wrapping, which would otherwise sever the bus line); the
+// Reports tab's outer container scrolls horizontally if a row is wider
+// than the viewport.
 function OrgNodeRenderer({
   node,
   profiles,
+  collapsed,
+  onToggle,
 }: {
   node: OrgTreeNode;
   profiles: Record<string, { first_name: string | null; last_name: string | null }>;
+  collapsed: Set<string>;
+  onToggle: (key: string) => void;
 }) {
+  const hasChildren = node.children.length > 0;
+  const isCollapsed = hasChildren && collapsed.has(node.key);
+
   return (
     <div className="flex flex-col items-center">
-      <OrgBox node={node} profiles={profiles} />
-      {node.children.length > 0 && (
-        <div className="flex flex-col items-center">
-          <div className="w-px h-5 bg-border" />
-          <div className="flex flex-wrap justify-center gap-x-4 gap-y-5 border-t border-border pt-5">
-            {node.children.map((child) => (
-              <OrgNodeRenderer key={child.key} node={child} profiles={profiles} />
-            ))}
-          </div>
-        </div>
+      <OrgBox
+        node={node}
+        profiles={profiles}
+        hasChildren={hasChildren}
+        isCollapsed={isCollapsed}
+        onToggleCollapse={() => onToggle(node.key)}
+      />
+      {isCollapsed && (
+        <p className="mt-4 text-[11px] text-muted-foreground whitespace-nowrap">
+          {countDescendants(node)} hidden — click to expand
+        </p>
+      )}
+      {hasChildren && !isCollapsed && (
+        <ul
+          className="list-none relative flex justify-center pt-6 before:content-[''] before:absolute before:top-0 before:left-1/2 before:-translate-x-1/2 before:w-px before:h-6 before:bg-border"
+        >
+          {node.children.map((child) => (
+            <li
+              key={child.key}
+              className="relative px-3 pt-6 before:content-[''] before:absolute before:top-0 before:right-1/2 before:w-1/2 before:h-6 before:border-t before:border-border after:content-[''] after:absolute after:top-0 after:left-1/2 after:w-1/2 after:h-6 after:border-t after:border-l after:border-border first:before:border-t-0 last:after:border-t-0 last:after:border-l-0 last:before:border-r last:before:border-border only:before:hidden only:after:hidden only:pt-0"
+            >
+              <OrgNodeRenderer node={child} profiles={profiles} collapsed={collapsed} onToggle={onToggle} />
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -308,6 +364,20 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     });
     return buildOrgForest(roster, reportsByEmail);
   }, [roster, reports]);
+
+  // Which org-chart branches are collapsed, keyed by OrgTreeNode.key.
+  // Everything starts expanded; the admin collapses branches themselves to
+  // declutter a wide/deep chart rather than the chart auto-collapsing on
+  // them.
+  const [collapsedOrgNodes, setCollapsedOrgNodes] = useState<Set<string>>(new Set());
+  const toggleOrgNode = (key: string) => {
+    setCollapsedOrgNodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const loadRoster = async (teamId: string) => {
     const supabase = createClient();
@@ -760,10 +830,21 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                 {roster.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No one on the roster yet.</p>
                 ) : (
-                  <div className="rounded-xl border border-border/50 bg-secondary/30 p-6">
-                    <div className="flex flex-wrap justify-center gap-x-10 gap-y-8">
+                  <div className="rounded-xl border border-border/50 bg-secondary/30 p-6 overflow-x-auto">
+                    {/* min-w-max keeps this shrink-to-fit instead of stretching to the
+                        scroll container's width — without it, justify-center splits any
+                        overflow evenly across both edges, and a scroll container only
+                        ever exposes the overflow on one edge, so the other half becomes
+                        permanently unreachable and invisible with no scrollbar to find it. */}
+                    <div className="flex justify-center gap-x-10 gap-y-8 min-w-max">
                       {orgForest.map((root) => (
-                        <OrgNodeRenderer key={root.key} node={root} profiles={profiles} />
+                        <OrgNodeRenderer
+                          key={root.key}
+                          node={root}
+                          profiles={profiles}
+                          collapsed={collapsedOrgNodes}
+                          onToggle={toggleOrgNode}
+                        />
                       ))}
                     </div>
                   </div>
