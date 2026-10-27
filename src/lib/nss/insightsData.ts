@@ -25,6 +25,7 @@ export interface JourneyEntry {
   phase: "calibration" | "adaptive";
   questionId: number;
   pair: string;
+  mappedClusters: [ClusterKey, ClusterKey];
   status: "answered" | "it_depends_then_answered" | "skipped";
   selection: "A" | "B" | null;
   chosenCluster: ClusterKey | null;
@@ -138,6 +139,7 @@ export async function computeInsightsData(
       phase: "calibration",
       questionId: qid,
       pair: `${q.mappedClusters[0]} vs ${q.mappedClusters[1]}`,
+      mappedClusters: q.mappedClusters,
       status,
       selection: (r?.selection as "A" | "B" | null) ?? null,
       chosenCluster: r ? (r.selection === "A" ? q.mappedClusters[0] : q.mappedClusters[1]) : null,
@@ -174,6 +176,7 @@ export async function computeInsightsData(
         phase: "adaptive",
         questionId: qid,
         pair: `${q.mappedClusters[0]} vs ${q.mappedClusters[1]}`,
+        mappedClusters: q.mappedClusters,
         status,
         selection: (r?.selection as "A" | "B" | null) ?? null,
         chosenCluster: r ? (r.selection === "A" ? q.mappedClusters[0] : q.mappedClusters[1]) : null,
@@ -214,6 +217,7 @@ export async function computeInsightsData(
         phase: "adaptive",
         questionId: qid,
         pair: `${q.mappedClusters[0]} vs ${q.mappedClusters[1]}`,
+        mappedClusters: q.mappedClusters,
         status,
         selection: (r?.selection as "A" | "B" | null) ?? null,
         chosenCluster: r ? (r.selection === "A" ? q.mappedClusters[0] : q.mappedClusters[1]) : null,

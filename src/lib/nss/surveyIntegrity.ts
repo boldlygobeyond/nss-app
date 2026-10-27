@@ -235,10 +235,7 @@ export async function computeSurveyIntegrity(
       note: "The decisive-answer count for this submission doesn't look right, so the stored scoring snapshot can't be vouched for against it.",
     };
   } else {
-    scoring = {
-      status: "pass",
-      note: "A complete, consistent decisive-answer set and a stored scoring result both exist. This does not re-run or re-verify the Bradley-Terry ranking itself.",
-    };
+    scoring = { status: "pass", note: "" };
   }
 
   // ── Overall ───────────────────────────────────────────────────────────

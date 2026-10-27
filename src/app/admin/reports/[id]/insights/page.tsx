@@ -12,11 +12,12 @@ import {
   type CheckStatus,
   type OverallStatus,
 } from "@/lib/nss/surveyIntegrity";
-import type { ClusterKey } from "@/lib/nss/clusters";
+import { CLUSTER_LABELS, type ClusterKey } from "@/lib/nss/clusters";
 import GlobalHeader from "@/components/GlobalHeader";
 
 function clusterCode(c: ClusterKey | null): string {
-  return c ? c.slice(0, 3).toUpperCase() : "—";
+  if (!c) return "—";
+  return CLUSTER_LABELS[c].split(" ")[0].slice(0, 3).toUpperCase();
 }
 
 function pairKeyOf(a: string, b: string): string {
@@ -67,16 +68,19 @@ function JourneyCell({
   onSelect: () => void;
   cellRef: (el: HTMLButtonElement | null) => void;
 }) {
+  const top = entry.chosenCluster ?? entry.mappedClusters[0];
+  const bottom = entry.chosenCluster ? entry.rejectedCluster : entry.mappedClusters[1];
   return (
     <button
       ref={cellRef}
       onClick={onSelect}
       title={`Q${entry.position} · ${entry.pair}`}
-      className={`relative w-7 h-7 rounded-md border text-[9px] font-mono font-medium flex items-center justify-center transition-transform ${STATUS_STYLES[entry.status]} ${
+      className={`relative w-7 h-9 rounded-md border text-[8px] leading-[1.15] font-mono font-medium flex flex-col items-center justify-center transition-transform ${STATUS_STYLES[entry.status]} ${
         entry.tier ? TIER_UNDERLINE[entry.tier] ?? "" : ""
       } ${flash ? "scale-125 ring-2 ring-primary" : "hover:scale-110 hover:ring-2 hover:ring-primary/60"}`}
     >
-      {clusterCode(entry.chosenCluster)}
+      <span className={entry.chosenCluster ? "text-foreground" : "text-muted-foreground"}>{clusterCode(top)}</span>
+      <span className={entry.chosenCluster ? "text-muted-foreground/70" : "text-muted-foreground"}>{clusterCode(bottom)}</span>
     </button>
   );
 }
@@ -184,6 +188,7 @@ export default function InsightsPage({ params }: { params: Promise<{ id: string 
   const adaptiveCells = data.journey.filter((e) => e.phase === "adaptive");
   const clusters = Object.keys(data.clusterLabels) as ClusterKey[];
   const maxCount = Math.max(1, ...clusters.flatMap((a) => clusters.map((b) => data.matrix[a][b])));
+  const deliveredPairs = new Set(data.journey.map((e) => pairKeyOf(e.mappedClusters[0], e.mappedClusters[1])));
 
   // ── confidence trajectory geometry ──
   const traj = data.trajectory;
@@ -336,7 +341,7 @@ export default function InsightsPage({ params }: { params: Promise<{ id: string 
                   <p className="text-xs text-muted-foreground mb-2">{integrity.calibration.note}</p>
                 )}
 
-                <p className="text-xs text-muted-foreground">{integrity.scoring.note}</p>
+                {integrity.scoring.note && <p className="text-xs text-muted-foreground">{integrity.scoring.note}</p>}
               </div>
             )}
           </section>
@@ -357,8 +362,14 @@ export default function InsightsPage({ params }: { params: Promise<{ id: string 
             <p className="text-xs text-muted-foreground mt-1">skipped entirely</p>
           </div>
           <div className="bg-card p-4">
-            <p className="text-sm font-semibold text-foreground">
-              {lastTraj ? lastTraj.top3.map((c) => data.clusterLabels[c]).join(" · ") : "—"}
+            <p className="text-sm font-semibold text-foreground leading-snug">
+              {lastTraj
+                ? lastTraj.top3.map((c) => (
+                    <span key={c} className="block">
+                      {data.clusterLabels[c]}
+                    </span>
+                  ))
+                : "—"}
             </p>
             <p className="text-xs text-muted-foreground mt-1">final top 3</p>
           </div>
@@ -466,6 +477,13 @@ export default function InsightsPage({ params }: { params: Promise<{ id: string 
                       </th>
                       {clusters.map((colC) => {
                         if (rowC === colC) return <td key={colC} className="p-1 text-center min-w-[26px]" />;
+                        if (!deliveredPairs.has(pairKeyOf(rowC, colC))) {
+                          return (
+                            <td key={colC} className="p-1 text-center min-w-[26px] text-muted-foreground/40">
+                              —
+                            </td>
+                          );
+                        }
                         const v = data.matrix[rowC][colC] || 0;
                         const alpha = 0.08 + 0.75 * (v / maxCount);
                         return (
