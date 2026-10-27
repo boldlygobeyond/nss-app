@@ -184,22 +184,27 @@ export default function NovaGreeting({
             </h2>
             <div className="bg-card border border-border/50 rounded-2xl p-6 md:p-8 text-left shadow-sm mb-8">
               <p className="text-foreground text-base md:text-lg leading-relaxed mb-4">
-                Today, I&apos;m going to take you through 50 &quot;would you rather&quot; style questions to
-                learn a bit about you. Don&apos;t worry about tying your answers to work—just go with whatever comes
-                to mind.
+                I&apos;m going to guide you through 50 &quot;would you rather&quot; style questions to explore which
+                human needs matter most to you.
               </p>
               <p className="text-foreground text-base md:text-lg leading-relaxed mb-4">
-                While the questions are multiple choice, feel free to select{" "}
-                <span className="font-semibold text-primary">&quot;It Depends&quot;</span> and I&apos;ll see if I can
-                clarify things for you. If you still aren&apos;t sure, you can skip the question.
+                Each question presents two needs. Both may be important to you, but we&apos;re interested in which one
+                you&apos;d prioritize if you had to choose.
               </p>
-              <p className="text-foreground text-base md:text-lg leading-relaxed">Let&apos;s get started.</p>
+              <p className="text-foreground text-base md:text-lg leading-relaxed mb-4">
+                There are no right or wrong answers, so go with your gut.
+              </p>
+              <p className="text-foreground text-base md:text-lg leading-relaxed">
+                If you&apos;re unsure, select{" "}
+                <span className="font-semibold text-primary">&quot;It Depends&quot;</span> and I&apos;ll ask the
+                question a different way. You can also skip a question if you&apos;re still unsure.
+              </p>
             </div>
             <button
               onClick={handleBegin}
               className="h-12 px-10 text-base rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground transition-colors"
             >
-              I&apos;m ready →
+              Begin →
             </button>
           </motion.div>
         )}

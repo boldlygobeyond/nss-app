@@ -184,7 +184,7 @@ async function driveToSurvey() {
   const pronounButton = await screen.findByText("he/him");
   fireEvent.click(pronounButton);
   await new Promise((r) => setTimeout(r, 350)); // NovaGreeting's own 300ms step transition
-  const readyButton = await screen.findByRole("button", { name: /i'm ready/i });
+  const readyButton = await screen.findByRole("button", { name: /begin/i });
   fireEvent.click(readyButton);
   await screen.findByRole("heading", { level: 2 });
   return currentQuestionId();
