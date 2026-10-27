@@ -878,6 +878,8 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                           <TeamNeedsHeatmap members={snapshotScores} rowOrder={rowOrder} />
                         </div>
 
+                        <hr className="border-border/50" />
+
                         <div>
                           <h2 className="font-heading text-sm font-semibold text-foreground mb-3">
                             Our Team&apos;s Needs Profile

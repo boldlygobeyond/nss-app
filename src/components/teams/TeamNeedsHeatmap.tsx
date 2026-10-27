@@ -79,9 +79,9 @@ export default function TeamNeedsHeatmap({
         </div>
       </div>
 
-      <div className="mt-2.5 max-w-md">
+      <div className="mt-2.5 max-w-md mx-auto">
         <div className="h-2.5 rounded-full" style={{ background: heatmapLegendGradientCss() }} />
-        <div className="flex items-center justify-between mt-1 text-xs text-muted-foreground">
+        <div className="flex items-center justify-between mt-1.5 text-sm text-muted-foreground">
           <span>Less favored</span>
           <span>More favored</span>
         </div>

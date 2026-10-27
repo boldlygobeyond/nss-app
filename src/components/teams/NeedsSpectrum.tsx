@@ -159,7 +159,7 @@ export default function NeedsSpectrum({
         })}
       </div>
 
-      <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
+      <div className="flex items-center justify-between mt-3 max-w-md mx-auto text-sm text-muted-foreground">
         <span>Less favored</span>
         <span>More favored</span>
       </div>
