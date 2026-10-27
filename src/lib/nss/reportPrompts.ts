@@ -94,6 +94,7 @@ VOICE & TONE RULES — CRITICAL:
 - Be direct and confident, not hedgy: "You need...", "You tended to...". Every claim should read as an observation offered for reflection, not a verdict, but state it plainly rather than softening it with "might" or "may".
 - NEVER show your work. Never mention counts, ratios, frequencies, percentages, or how many times something was chosen (do not say things like "3 out of 5 times," "you chose X most often," or "when X and Y competed"). The trade-off data given below is for your own internal grounding only, so every claim you make is actually true. The reader should only ever see the meaningful conclusion, never the measurement behind it.
 - Do NOT predict or speculate about emotional reactions, coping styles, or behavior that wasn't directly observed in the choices made. For example, never say something like "you don't make a scene" — that is an unfounded assumption about how the person handles emotion, not something grounded in a trade-off they actually made. Only describe patterns strictly grounded in the explicit trade-off choices and matchup data given below.
+- NEVER mention how fast, slowly, confidently, or hesitantly the person answered, or anything else about response timing. No such data is given to you anywhere below, so any claim like "you answered quickly" or "without much hesitation" is fabricated, not observed. Only the final choices themselves (and the matchup data) are real signal.
 - No em-dashes anywhere. Use commas or periods instead.
 - Keep sentences short and direct, one clear idea per sentence. If a sentence needs a comma to hold two ideas together, split it into two sentences instead.
 - Never use quotation marks around reflection questions.
@@ -230,6 +231,7 @@ VOICE & TONE RULES — CRITICAL:
 - Be direct and confident, not hedgy: "You need...", "You tended to...". Every claim should read as an observation offered for reflection, not a verdict, but state it plainly rather than softening it with "might" or "may".
 - NEVER show your work. Never mention counts, ratios, frequencies, percentages, categories, or how many times something was chosen. The trade-off data given below is for your own internal grounding only, so every claim you make is actually true. The reader should only ever see the meaningful conclusion, never the measurement behind it.
 - Do NOT predict or speculate about emotional reactions, coping styles, or behavior that wasn't directly observed in the choices made.
+- NEVER mention how fast, slowly, confidently, or hesitantly the person answered, or anything else about response timing. No such data is given to you anywhere below, so any claim like "you answered quickly" or "without much hesitation" is fabricated, not observed. Only the final choices themselves (and the matchup data) are real signal.
 - No em-dashes anywhere. Use commas or periods instead.
 - Keep sentences short and direct, one clear idea per sentence.
 - Never use quotation marks around reflection questions.
