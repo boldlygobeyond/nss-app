@@ -2,10 +2,16 @@
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, ShieldAlert } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, Loader2, ShieldAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile } from "@/lib/nss/userProfiles";
 import { computeInsightsData, type InsightsData, type JourneyEntry } from "@/lib/nss/insightsData";
+import {
+  computeSurveyIntegrity,
+  type SurveyIntegrityResult,
+  type CheckStatus,
+  type OverallStatus,
+} from "@/lib/nss/surveyIntegrity";
 import type { ClusterKey } from "@/lib/nss/clusters";
 import GlobalHeader from "@/components/GlobalHeader";
 
@@ -29,6 +35,25 @@ const TIER_UNDERLINE: Record<string, string> = {
   validation: "shadow-[inset_0_-2.5px_0_0_#f59e0b]",
   default: "shadow-[inset_0_-2.5px_0_0_theme(colors.primary.DEFAULT)]",
   "guard-relaxed": "shadow-[inset_0_-2.5px_0_0_#a855f7]",
+};
+
+const OVERALL_INTEGRITY_LABEL: Record<OverallStatus, string> = {
+  passed: "Passed",
+  issues_detected: "Issues detected",
+  incomplete: "Incomplete",
+  unable_to_verify: "Unable to verify",
+};
+const OVERALL_INTEGRITY_STYLE: Record<OverallStatus, string> = {
+  passed: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40",
+  issues_detected: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/40",
+  incomplete: "bg-secondary text-muted-foreground border-transparent",
+  unable_to_verify: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/60",
+};
+const CHECK_STATUS_LABEL: Record<CheckStatus, string> = {
+  pass: "Passed",
+  issue: "Issue",
+  incomplete: "In progress",
+  unable_to_verify: "Unable to verify",
 };
 
 function JourneyCell({
@@ -62,6 +87,8 @@ export default function InsightsPage({ params }: { params: Promise<{ id: string 
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const [data, setData] = useState<InsightsData | null>(null);
+  const [integrity, setIntegrity] = useState<SurveyIntegrityResult | null>(null);
+  const [integrityOpen, setIntegrityOpen] = useState(true);
 
   const [selectedEntry, setSelectedEntry] = useState<JourneyEntry | null>(null);
   const [matrixPair, setMatrixPair] = useState<[ClusterKey, ClusterKey] | null>(null);
@@ -87,8 +114,12 @@ export default function InsightsPage({ params }: { params: Promise<{ id: string 
         return;
       }
       setAuthorized(true);
-      const insights = await computeInsightsData(supabase, id);
+      const [insights, integrityResult] = await Promise.all([
+        computeInsightsData(supabase, id),
+        computeSurveyIntegrity(supabase, id),
+      ]);
       setData(insights);
+      setIntegrity(integrityResult);
       setLoading(false);
     };
     load();
@@ -199,10 +230,117 @@ export default function InsightsPage({ params }: { params: Promise<{ id: string 
 
         <p className="text-xs font-semibold tracking-wide uppercase text-primary mb-1">Insights · under the hood</p>
         <h1 className="font-heading text-2xl font-bold text-foreground mb-1">{data.respondentName}&apos;s journey</h1>
-        <p className="text-sm text-muted-foreground mb-8">
+        <p className="text-sm text-muted-foreground mb-4">
           Every question they saw, how the delivery logic picked it, and where their needs ranking landed. Click any
           question to read it.
         </p>
+
+        {data.duplicateResponsesRemoved > 0 && (
+          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+            {data.duplicateResponsesRemoved} question{data.duplicateResponsesRemoved === 1 ? "" : "s"} below had more
+            than one stored response — everything here and in scoring uses only the most recent answer to each.
+          </p>
+        )}
+
+        {/* survey integrity — admin-only read-only diagnostic, see NSS_Survey_Integrity_Panel.md */}
+        {integrity && (
+          <section className="bg-card border border-border/50 rounded-2xl p-5 mb-8">
+            <button
+              onClick={() => setIntegrityOpen((o) => !o)}
+              className="w-full flex items-center justify-between gap-3 text-left"
+            >
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h2 className="text-sm font-semibold text-foreground">Survey Integrity</h2>
+                <span
+                  className={`text-xs font-medium px-2 py-0.5 rounded-full border ${OVERALL_INTEGRITY_STYLE[integrity.overallStatus]}`}
+                >
+                  {OVERALL_INTEGRITY_LABEL[integrity.overallStatus]}
+                </span>
+              </div>
+              {integrityOpen ? (
+                <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+              )}
+            </button>
+
+            {integrityOpen && (
+              <div className="mt-4 pt-4 border-t border-border/50">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">Decisive answers</p>
+                    <p className="text-sm font-medium text-foreground tabular-nums">
+                      {integrity.decisiveAnswers.count}
+                      {integrity.decisiveAnswers.expected !== null ? ` / ${integrity.decisiveAnswers.expected}` : ""}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">Duplicate records</p>
+                    <p className="text-sm font-medium text-foreground tabular-nums">{integrity.duplicates.groups.length}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">Calibration coverage</p>
+                    <p className="text-sm font-medium text-foreground tabular-nums">
+                      {integrity.calibration.status === "unable_to_verify"
+                        ? "Unable to verify"
+                        : `${integrity.calibration.covered} / ${integrity.calibration.total}`}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">Scoring consistency</p>
+                    <p className="text-sm font-medium text-foreground">{CHECK_STATUS_LABEL[integrity.scoring.status]}</p>
+                  </div>
+                </div>
+
+                {integrity.decisiveAnswers.mismatch && (
+                  <p className="text-xs text-red-600 dark:text-red-400 mb-2">
+                    Stored &quot;questions answered&quot; ({integrity.decisiveAnswers.storedQuestionsAnswered}) doesn&apos;t
+                    match the actual distinct decisive-answer count ({integrity.decisiveAnswers.count}).
+                  </p>
+                )}
+
+                {integrity.duplicates.groups.length > 0 && (
+                  <div className="text-xs mb-2">
+                    <p className="text-muted-foreground mb-1.5">
+                      {integrity.duplicates.historicalCount > 0 &&
+                        `${integrity.duplicates.historicalCount} historical (pre-fix, before ${new Date(
+                          "2026-10-20T00:00:00.000Z",
+                        ).toLocaleDateString()})`}
+                      {integrity.duplicates.historicalCount > 0 && integrity.duplicates.newCount > 0 && " · "}
+                      {integrity.duplicates.newCount > 0 && `${integrity.duplicates.newCount} new (at/after the fix — investigate)`}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {integrity.duplicates.groups.map((g) => (
+                        <span
+                          key={g.questionId}
+                          title={g.answeredAts.join(", ")}
+                          className={`font-mono px-2 py-0.5 rounded border ${
+                            g.isHistorical
+                              ? "bg-secondary border-border/50 text-muted-foreground"
+                              : "bg-red-500/10 border-red-500/40 text-red-600 dark:text-red-400"
+                          }`}
+                        >
+                          Q{g.questionId} ×{g.rowCount}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {integrity.calibration.missingPairs.length > 0 && (
+                  <p className="text-xs text-red-600 dark:text-red-400 mb-2">
+                    Missing cluster pairs: {integrity.calibration.missingPairs.join(", ")}
+                  </p>
+                )}
+                {integrity.calibration.note && (
+                  <p className="text-xs text-muted-foreground mb-2">{integrity.calibration.note}</p>
+                )}
+
+                <p className="text-xs text-muted-foreground">{integrity.scoring.note}</p>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-border/50 border border-border/50 rounded-xl overflow-hidden mb-8">

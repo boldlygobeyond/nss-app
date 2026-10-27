@@ -38,11 +38,12 @@ export function questionFromRow(row: NssQuestionRow): SurveyQuestion {
   };
 }
 
-// Oct 2026 question-bank rebalance: the deployed app only ever serves the
-// original 50 (ids 1-50). The new 86-question bank (ids 51-136) lives in
-// the same table, gated behind a local-only env flag, so it can be tested
-// end-to-end without affecting what's actually live. Once the new bank
-// replaces the old one for real, drop this split and the id filter.
+// Oct 2026 question-bank rebalance: both the original 50 (ids 1-50) and
+// the new 86-question bank (ids 51-136) live in the same table. This flag
+// is live in production today (confirmed via `vercel env ls`), serving
+// the new bank — must agree with SurveyClient.tsx's matching USE_BT_ENGINE
+// flag. Once the old bank is fully retired, drop this split and the id
+// filter.
 const useNewBank = process.env.NEXT_PUBLIC_NSS_ENGINE === "bt";
 
 export async function fetchQuestions(

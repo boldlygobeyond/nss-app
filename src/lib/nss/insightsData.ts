@@ -18,6 +18,7 @@ import {
 } from "./adaptiveDelivery";
 import { rankByBradleyTerry, top3Stability, type BtResponse } from "./bradleyTerry";
 import type { TopNeed } from "./surveyEngine";
+import { latestResponsePerQuestion } from "./responseDedup";
 
 export interface JourneyEntry {
   position: number;
@@ -46,6 +47,12 @@ export interface InsightsData {
   // UI uses this to decide whether tier labels are meaningful to show.
   usesNewBank: boolean;
   totalQuestions: number;
+  // Rows removed by latestResponsePerQuestion — a non-zero count means this
+  // submission had more than one stored response for the same question at
+  // some point (see NSS_Back_Navigation_And_Duplicate_Fix.md). Not shown as a
+  // methodological disclaimer on anything a respondent sees; surfaced here
+  // only so this diagnostic page doesn't silently hide the anomaly.
+  duplicateResponsesRemoved: number;
   skippedCount: number;
   itDependsCount: number;
   journey: JourneyEntry[];
@@ -77,7 +84,21 @@ export async function computeInsightsData(
     .select("question_id, chosen_clusters, rejected_clusters, is_sharpened, selection, answered_at")
     .eq("submission_id", submissionId)
     .order("answered_at", { ascending: true });
-  const responses = rawResponses ?? [];
+  // Deduplicated once, here, to the most recent row per question — the
+  // same rule every other scoring consumer uses (responseDedup.ts) — so
+  // this diagnostic page can't disagree with the actual scores about which
+  // answer counted. Previously calibration and the adaptive phase handled
+  // a duplicate row differently: a Map keyed by question_id silently kept
+  // only the last answer in calibration, while the adaptive phase iterated
+  // the raw (undeduplicated) array directly, producing two separate
+  // journey entries — inflating the apparent question count and shifting
+  // every later position by one (NSS_Back_Navigation_And_Duplicate_Fix.md, Finding
+  // 5.2). Deduplicating once up front, before either phase reads
+  // `responses`, makes that discrepancy structurally impossible rather
+  // than something to keep in sync by hand.
+  const rawCount = rawResponses?.length ?? 0;
+  const responses = latestResponsePerQuestion(rawResponses ?? []);
+  const duplicateResponsesRemoved = rawCount - responses.length;
 
   const { data: questionRows } = await supabase.from("nss_questions").select("*");
   const allQuestions: SurveyQuestion[] = ((questionRows ?? []) as NssQuestionRow[]).map(questionFromRow);
@@ -87,6 +108,7 @@ export async function computeInsightsData(
   const fullSequence = submission.question_sequence as number[];
   const responseByQid = new Map(responses.map((r) => [r.question_id, r]));
   const calibrationIds = fullSequence.slice(0, 21);
+  const adaptiveIds = fullSequence.slice(21);
   // v1 (the original 50-question bank) used a completely different
   // selection mechanism (surveyEngine.ts's selectAdaptiveBlock — win-rate
   // blocks of 7, not one-at-a-time Bradley-Terry tiers). Replaying
@@ -98,6 +120,14 @@ export async function computeInsightsData(
 
   const journey: JourneyEntry[] = [];
 
+  // Both phases walk the submission's own authoritative question_sequence
+  // (the real delivery order), not the responses array — a response-row
+  // filter would silently drop a skipped question from the journey
+  // entirely instead of showing it as skipped, which is exactly what the
+  // adaptive phase used to do (calibration already walked its own slice of
+  // the sequence this way; the adaptive phase previously iterated answered
+  // responses only — a second, independent inconsistency from Finding 5.2,
+  // fixed the same way here).
   calibrationIds.forEach((qid, i) => {
     const q = qMap[qid];
     if (!q) return;
@@ -116,69 +146,79 @@ export async function computeInsightsData(
     });
   });
 
-  const calibrationResponses = responses.filter((r) => calibrationIds.includes(r.question_id));
-  const adaptiveResponses = responses.filter((r) => !calibrationIds.includes(r.question_id));
-
   if (usesNewBank) {
+    const calibrationAnswered = calibrationIds
+      .map((qid) => responseByQid.get(qid))
+      .filter((r): r is NonNullable<typeof r> => !!r);
     let state: DeliveryState = seedDeliveryStateFromHistory(
-      calibrationResponses.map((r) => ({
+      calibrationAnswered.map((r) => ({
         mappedClusters: qMap[r.question_id].mappedClusters,
         isSharpened: r.is_sharpened as boolean,
       })),
     );
-    const calibrationCount = calibrationResponses.length;
-    for (let j = 0; j < adaptiveResponses.length; j++) {
-      const i = calibrationCount + j;
-      const btResponsesSoFar: BtResponse[] = [...calibrationResponses, ...adaptiveResponses.slice(0, j)].map((r) => ({
-        chosen_clusters: r.chosen_clusters,
-        rejected_clusters: r.rejected_clusters,
-      }));
-      const seqPos = fullSequence.indexOf(adaptiveResponses[j].question_id);
-      const usedIds = new Set(fullSequence.slice(0, seqPos));
-      const replay = selectNextBtQuestion(questions, btResponsesSoFar, usedIds, state, i);
-      const actual = adaptiveResponses[j];
-      const actualQ = qMap[actual.question_id];
-      if (!actualQ) continue;
+    let btResponsesSoFar: BtResponse[] = calibrationAnswered.map((r) => ({
+      chosen_clusters: r.chosen_clusters,
+      rejected_clusters: r.rejected_clusters,
+    }));
+    let answeredCount = btResponsesSoFar.length;
+
+    adaptiveIds.forEach((qid, j) => {
+      const q = qMap[qid];
+      if (!q) return;
+      const usedIds = new Set(fullSequence.slice(0, 21 + j));
+      const replay = selectNextBtQuestion(questions, btResponsesSoFar, usedIds, state, answeredCount);
+      const r = responseByQid.get(qid);
+      const status: JourneyEntry["status"] = r ? (r.is_sharpened ? "it_depends_then_answered" : "answered") : "skipped";
       journey.push({
         position: 21 + j + 1,
         phase: "adaptive",
-        questionId: actual.question_id,
-        pair: `${actualQ.mappedClusters[0]} vs ${actualQ.mappedClusters[1]}`,
-        status: actual.is_sharpened ? "it_depends_then_answered" : "answered",
-        selection: actual.selection as "A" | "B",
-        chosenCluster: actual.selection === "A" ? actualQ.mappedClusters[0] : actualQ.mappedClusters[1],
-        rejectedCluster: actual.selection === "A" ? actualQ.mappedClusters[1] : actualQ.mappedClusters[0],
+        questionId: qid,
+        pair: `${q.mappedClusters[0]} vs ${q.mappedClusters[1]}`,
+        status,
+        selection: (r?.selection as "A" | "B" | null) ?? null,
+        chosenCluster: r ? (r.selection === "A" ? q.mappedClusters[0] : q.mappedClusters[1]) : null,
+        rejectedCluster: r ? (r.selection === "A" ? q.mappedClusters[1] : q.mappedClusters[0]) : null,
         tier: replay?.tier,
-        text: textFor(actualQ, actual.is_sharpened as boolean),
+        text: textFor(q, status === "it_depends_then_answered"),
       });
-      const [a, b] = actualQ.mappedClusters;
-      state = applyAnswerOutcome(
-        {
-          ...state,
-          recentPairKeys: [...state.recentPairKeys, [a, b].sort().join("|")].slice(-10),
-          recentQuestionClusters: [...state.recentQuestionClusters, [a, b] as [ClusterKey, ClusterKey]].slice(-10),
-          lastSeenAt: { ...state.lastSeenAt, [a]: i, [b]: i },
-        },
-        actualQ.mappedClusters,
-        actual.is_sharpened as boolean,
-      );
-    }
+      // Matches the live selector's own behavior (SurveyClient.tsx's
+      // handleSkip): a skipped question never calls applyAnswerOutcome and
+      // never joins btResponsesSoFar — it only occupies a usedIds slot, via
+      // fullSequence above, so the replay never re-offers it.
+      if (r) {
+        answeredCount++;
+        btResponsesSoFar = [...btResponsesSoFar, { chosen_clusters: r.chosen_clusters, rejected_clusters: r.rejected_clusters }];
+        const [a, b] = q.mappedClusters;
+        state = applyAnswerOutcome(
+          {
+            ...state,
+            recentPairKeys: [...state.recentPairKeys, [a, b].sort().join("|")].slice(-10),
+            recentQuestionClusters: [...state.recentQuestionClusters, [a, b] as [ClusterKey, ClusterKey]].slice(-10),
+            lastSeenAt: { ...state.lastSeenAt, [a]: 21 + j, [b]: 21 + j },
+          },
+          q.mappedClusters,
+          r.is_sharpened as boolean,
+        );
+      }
+    });
   } else {
-    // v1 — no tier replay, just the real recorded answer for each
-    // adaptive-phase question in order.
-    adaptiveResponses.forEach((actual, j) => {
-      const actualQ = qMap[actual.question_id];
-      if (!actualQ) return;
+    // v1 — no tier replay, just the real recorded answer (or lack of one)
+    // for each adaptive-phase question in delivery order.
+    adaptiveIds.forEach((qid, j) => {
+      const q = qMap[qid];
+      if (!q) return;
+      const r = responseByQid.get(qid);
+      const status: JourneyEntry["status"] = r ? (r.is_sharpened ? "it_depends_then_answered" : "answered") : "skipped";
       journey.push({
         position: 21 + j + 1,
         phase: "adaptive",
-        questionId: actual.question_id,
-        pair: `${actualQ.mappedClusters[0]} vs ${actualQ.mappedClusters[1]}`,
-        status: actual.is_sharpened ? "it_depends_then_answered" : "answered",
-        selection: actual.selection as "A" | "B",
-        chosenCluster: actual.selection === "A" ? actualQ.mappedClusters[0] : actualQ.mappedClusters[1],
-        rejectedCluster: actual.selection === "A" ? actualQ.mappedClusters[1] : actualQ.mappedClusters[0],
-        text: textFor(actualQ, actual.is_sharpened as boolean),
+        questionId: qid,
+        pair: `${q.mappedClusters[0]} vs ${q.mappedClusters[1]}`,
+        status,
+        selection: (r?.selection as "A" | "B" | null) ?? null,
+        chosenCluster: r ? (r.selection === "A" ? q.mappedClusters[0] : q.mappedClusters[1]) : null,
+        rejectedCluster: r ? (r.selection === "A" ? q.mappedClusters[1] : q.mappedClusters[0]) : null,
+        text: textFor(q, status === "it_depends_then_answered"),
       });
     });
   }
@@ -222,6 +262,7 @@ export async function computeInsightsData(
     userEmail: submission.user_email,
     usesNewBank,
     totalQuestions: responses.length,
+    duplicateResponsesRemoved,
     skippedCount: journey.filter((j) => j.status === "skipped").length,
     itDependsCount: journey.filter((j) => j.status === "it_depends_then_answered").length,
     journey,
