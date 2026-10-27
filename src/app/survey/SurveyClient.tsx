@@ -173,7 +173,14 @@ export default function SurveyClient() {
   const currentHistoryEntry = currentQuestion
     ? (questionHistory.find((h) => h.question_id === currentQuestion.id) ?? null)
     : null;
-  const isReviewing = currentHistoryEntry !== null;
+  // Only true when the displayed wording (standard vs. sharpened) matches
+  // what was actually committed — switching to "It Depends" after
+  // reviewing a standard answer leaves the sharpened wording uncommitted,
+  // so it must force a fresh decisive answer or explicit skip rather than
+  // offering a Next that would silently leave the original answer in
+  // place with nothing chosen on screen. Going back to the standard
+  // wording and hitting Next there is the intended way to keep it.
+  const isReviewing = currentHistoryEntry !== null && currentHistoryEntry.is_sharpened_question === isSharpened;
   // True only for the single newest question — the one about to trigger a
   // stop-check and/or pull the next adaptive question once answered.
   // Reviewing anything earlier than this always just advances through the

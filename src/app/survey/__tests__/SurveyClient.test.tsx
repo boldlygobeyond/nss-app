@@ -610,4 +610,30 @@ describe("SurveyClient — real component, mocked Supabase only", () => {
     expect(deletedFilters).toEqual([{ submission_id: "sub-1", question_id: qA }]);
     expect(screen.getByText("0%")).toBeInTheDocument();
   });
+
+  it("Next is hidden after It Depends on a reviewed standard answer — must choose or skip, not silently keep the old answer", async () => {
+    setMockSupabase({ userId: "user-1", createdSubmission: { id: "sub-1" } });
+    render(<SurveyClient />);
+    const qA = await driveToSurvey();
+    await answer("A"); // Q(A) answered under STANDARD wording
+
+    fireEvent.click(screen.getByText("Back"));
+    await waitFor(() => expect(currentQuestionId()).toBe(qA));
+    expect(isSharpenedHeading()).toBe(false);
+    expect(screen.getByText("Next")).toBeInTheDocument(); // reviewing the standard answer as-is
+
+    const beforeDepends = headingText();
+    fireEvent.click(screen.getByText("It Depends"));
+    await waitForHeadingChange(beforeDepends);
+    expect(isSharpenedHeading()).toBe(true);
+
+    // Nothing committed for the sharpened wording yet — no Next to bypass it with.
+    expect(screen.queryByText("Next")).not.toBeInTheDocument();
+    expect(screen.getByText("Skip this one")).toBeInTheDocument();
+
+    // Going back to standard wording restores the original answer's Next.
+    fireEvent.click(screen.getByText("Back"));
+    await waitFor(() => expect(isSharpenedHeading()).toBe(false));
+    expect(screen.getByText("Next")).toBeInTheDocument();
+  });
 });
