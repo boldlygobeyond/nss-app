@@ -447,7 +447,13 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     setReports(
       submissions
         .map((s) => ({ ...s, completedAt: lastAnswered[s.id] ?? null }))
-        .sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? "")),
+        .sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""))
+        // One entry per person — a retake should replace their earlier
+        // submission everywhere this feeds (org chart, team snapshot), not
+        // show up alongside it. The array is already sorted most-recent
+        // first, so keeping each user_id's first occurrence keeps their
+        // latest completed submission.
+        .filter((r, i, arr) => arr.findIndex((x) => x.user_id === r.user_id) === i),
     );
 
     const allProfiles = await listAllProfiles(supabase);
