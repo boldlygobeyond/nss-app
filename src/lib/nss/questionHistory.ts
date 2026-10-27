@@ -111,27 +111,45 @@ export function applyAnswerToHistory(params: {
   };
 }
 
+export interface ApplySkipResult {
+  history: QuestionHistoryEntry[];
+  /** -1 when this skip replaces a previously-decisive answer for this question (the decisive count must come back down to match) — 0 for a fresh skip or re-skipping an already-skipped question, neither of which ever counted toward it. */
+  decisiveCountDelta: 0 | -1;
+}
+
 /**
  * Records a skip. Skips carry no scoring signal and never trigger
- * validation — only replaces/appends the history entry.
+ * validation — only replaces/appends the history entry. Skip is now
+ * reachable from a question that's already on record as a decisive
+ * answer (reviewing a committed sharpened answer, or reconsidering a
+ * standard one via "It Depends," can both end in Skip instead of a new
+ * decisive pick) — decisiveCountDelta tells the caller whether that
+ * actually un-counts a previously-decisive answer, since this function
+ * has no access to persistence itself: a -1 here means the caller also
+ * needs to delete that question's now-stale row from storage, not just
+ * update local state.
  */
 export function applySkipToHistory(params: {
   history: QuestionHistoryEntry[];
   questionId: number;
   mappedClusters: string[];
   isSharpened: boolean;
-}): QuestionHistoryEntry[] {
+}): ApplySkipResult {
   const { history, questionId, mappedClusters, isSharpened } = params;
   const priorIndex = history.findIndex((h) => h.question_id === questionId);
+  const prior = priorIndex !== -1 ? history[priorIndex] : null;
+  const priorWasDecisive = prior?.status === "answered";
   const skipEntry: SkippedEntry = {
     question_id: questionId,
     status: "skipped",
     mapped_clusters: mappedClusters,
     is_sharpened_question: isSharpened,
   };
-  return priorIndex !== -1
-    ? history.map((h, i) => (i === priorIndex ? skipEntry : h))
-    : [...history, skipEntry];
+  const newHistory: QuestionHistoryEntry[] =
+    priorIndex !== -1
+      ? history.map((h, i) => (i === priorIndex ? skipEntry : h))
+      : [...history, skipEntry];
+  return { history: newHistory, decisiveCountDelta: priorWasDecisive ? -1 : 0 };
 }
 
 /** Which wording was last shown for this question, so navigating back to it restores the same view. Defaults to standard (false) for a question never reached. */

@@ -8,10 +8,17 @@ export default function ProgressIndicator({
   tally,
   totalQuestions,
   questionsAnswered,
+  currentQuestionNumber,
 }: {
   tally: Tally;
   totalQuestions: number;
   questionsAnswered: number;
+  // 1-indexed position of the question actually on screen right now — not
+  // necessarily questionsAnswered + 1, since reviewing an earlier question
+  // via Back shows a lower number here while the percentage below stays
+  // pinned to real decisive progress, not wherever Back happens to be
+  // looking at the moment.
+  currentQuestionNumber: number;
 }) {
   const total = totalQuestions || 50;
   const progress = Math.min((questionsAnswered / total) * 100, 100);
@@ -19,7 +26,7 @@ export default function ProgressIndicator({
   return (
     <div className="w-full max-w-2xl mx-auto mb-6">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-muted-foreground font-body">Question {questionsAnswered + 1}</span>
+        <span className="text-xs text-muted-foreground font-body">Question {currentQuestionNumber}</span>
         <span className="text-xs text-muted-foreground font-body">{Math.round(progress)}%</span>
       </div>
       <div className="h-1.5 bg-secondary rounded-full overflow-hidden">

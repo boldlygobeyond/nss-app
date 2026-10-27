@@ -142,17 +142,14 @@ export default function QuestionCard({
                   onClick={() => onAnswer("B")}
                 />
               </div>
-              <div className="mt-5 flex justify-center gap-4">
-                {reviewing && onNext ? (
-                  <NextButton onClick={onNext} />
-                ) : (
-                  <button
-                    onClick={onSkip}
-                    className="text-muted-foreground hover:text-foreground text-sm transition-colors"
-                  >
-                    Skip this one
-                  </button>
-                )}
+              <div className="mt-5 flex items-center justify-center gap-4">
+                <button
+                  onClick={onSkip}
+                  className="text-muted-foreground hover:text-foreground text-sm transition-colors"
+                >
+                  Skip this one
+                </button>
+                {reviewing && onNext && <NextButton onClick={onNext} />}
               </div>
             </div>
           </>

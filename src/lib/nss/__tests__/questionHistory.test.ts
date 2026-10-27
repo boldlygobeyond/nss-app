@@ -201,17 +201,54 @@ describe("applyAnswerToHistory", () => {
 
 describe("applySkipToHistory", () => {
   it("6. sharpened -> skip -> Back restores the skipped sharpened state", () => {
-    const history = applySkipToHistory({ history: [], questionId: 5, mappedClusters: ["Recognition", "Connections"], isSharpened: true });
+    const { history, decisiveCountDelta } = applySkipToHistory({
+      history: [],
+      questionId: 5,
+      mappedClusters: ["Recognition", "Connections"],
+      isSharpened: true,
+    });
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({ status: "skipped", is_sharpened_question: true });
     expect(sharpenedForEntry(history, 5)).toBe(true);
+    expect(decisiveCountDelta).toBe(0); // nothing decisive existed to un-count
   });
 
   it("replaces rather than duplicates when skipping the same question twice", () => {
     const once = applySkipToHistory({ history: [], questionId: 5, mappedClusters: ["Recognition", "Connections"], isSharpened: false });
-    const twice = applySkipToHistory({ history: once, questionId: 5, mappedClusters: ["Recognition", "Connections"], isSharpened: true });
-    expect(twice).toHaveLength(1);
-    expect(twice[0]).toMatchObject({ is_sharpened_question: true });
+    const twice = applySkipToHistory({
+      history: once.history,
+      questionId: 5,
+      mappedClusters: ["Recognition", "Connections"],
+      isSharpened: true,
+    });
+    expect(twice.history).toHaveLength(1);
+    expect(twice.history[0]).toMatchObject({ is_sharpened_question: true });
+    expect(twice.decisiveCountDelta).toBe(0); // re-skipping an already-skipped question, still nothing to un-count
+  });
+
+  it("converting an already-decisive answer into a skip un-counts it (decisiveCountDelta -1)", () => {
+    const answered = applyAnswerToHistory({
+      history: [],
+      questionId: 5,
+      questionText: "sharpened?",
+      choice: "A",
+      chosenClusters: ["Recognition"],
+      rejectedClusters: ["Connections"],
+      mappedClusters: ["Recognition", "Connections"],
+      isSharpened: true,
+      answeredAt: "2026-10-27T00:00:00.000Z",
+    });
+    expect(answered.decisiveCountDelta).toBe(1);
+
+    const skipped = applySkipToHistory({
+      history: answered.history,
+      questionId: 5,
+      mappedClusters: ["Recognition", "Connections"],
+      isSharpened: true,
+    });
+    expect(skipped.history).toHaveLength(1); // replaced, not duplicated
+    expect(skipped.history[0]).toMatchObject({ status: "skipped", is_sharpened_question: true });
+    expect(skipped.decisiveCountDelta).toBe(-1); // the caller must also delete the now-stale stored row
   });
 });
 

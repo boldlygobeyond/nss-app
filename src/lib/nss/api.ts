@@ -193,6 +193,30 @@ export async function upsertResponse(
   }
 }
 
+/**
+ * Removes a submission's stored response to one question, with no
+ * replacement — for converting an already-decisive answer into a skip
+ * (reviewing a committed sharpened answer, or reconsidering a standard one
+ * via "It Depends," can both end in Skip instead of a new decisive pick).
+ * Skips themselves are never written here; this only clears whatever
+ * decisive row skipping is replacing. Uses the plain table delete (not the
+ * upsert_nss_response RPC, which only ever deletes as part of inserting a
+ * replacement) — nss_responses_delete_via_submission
+ * (0013_nss_responses_delete_policy.sql) already scopes this to the
+ * caller's own submission, same ownership rule the RPC enforces.
+ */
+export async function deleteResponse(
+  supabase: SupabaseClient,
+  params: { submissionId: string; questionId: number },
+): Promise<void> {
+  const { error } = await supabase
+    .from("nss_responses")
+    .delete()
+    .eq("submission_id", params.submissionId)
+    .eq("question_id", params.questionId);
+  if (error) throw error;
+}
+
 export interface StoredResponseRow {
   question_id: number;
   original_question_id: number | null;

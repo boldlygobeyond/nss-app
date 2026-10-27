@@ -30,6 +30,7 @@ import {
   updateSubmissionProgress,
   finishSubmission,
   upsertResponse,
+  deleteResponse,
   StaleWriteError,
   findInProgressSubmission,
   listResponsesForSubmission,
@@ -173,17 +174,6 @@ export default function SurveyClient() {
     ? (questionHistory.find((h) => h.question_id === currentQuestion.id) ?? null)
     : null;
   const isReviewing = currentHistoryEntry !== null;
-  // True while sharpened wording is on screen but hasn't actually been
-  // committed as the answer for this question yet — a fresh "It Depends"
-  // reask with nothing chosen (currentHistoryEntry is null), *or*
-  // reconsidering a question that's on record as answered/skipped under
-  // *standard* wording, where clicking "It Depends" to look at the
-  // sharpened phrasing shouldn't itself count as having left that
-  // standard answer. handleBack cancels out of this straight to standard
-  // wording of the *same* question rather than the previous one; the
-  // option-selected/skipped indicators below also use it so nothing
-  // recorded under a *different* wording is shown as chosen here.
-  const viewingUncommittedSharpened = isSharpened && currentHistoryEntry?.is_sharpened_question !== true;
   // True only for the single newest question — the one about to trigger a
   // stop-check and/or pull the next adaptive question once answered.
   // Reviewing anything earlier than this always just advances through the
@@ -277,6 +267,27 @@ export default function SurveyClient() {
           await upsertResponse(supabase, params);
         } catch (retryErr) {
           if (retryErr instanceof StaleWriteError) return;
+          console.error(`[SurveyClient] retry also failed for question ${params.questionId}:`, retryErr);
+          setWriteFailureNotice(true);
+        }
+      }
+    },
+    [supabase],
+  );
+
+  // Deletes a stale decisive row when a reviewed answer is turned into a
+  // skip instead (see handleSkip) — same retry-once-then-surface shape as
+  // writeResponseWithRetry, without the stale-write concern a plain
+  // delete-by-key doesn't have.
+  const deleteResponseWithRetry = useCallback(
+    async (params: { submissionId: string; questionId: number }) => {
+      try {
+        await deleteResponse(supabase, params);
+      } catch (err) {
+        console.error(`[SurveyClient] failed to delete the stale answer for question ${params.questionId}, retrying once:`, err);
+        try {
+          await deleteResponse(supabase, params);
+        } catch (retryErr) {
           console.error(`[SurveyClient] retry also failed for question ${params.questionId}:`, retryErr);
           setWriteFailureNotice(true);
         }
@@ -733,13 +744,26 @@ export default function SurveyClient() {
   const handleSkip = useCallback(() => {
     if (!currentQuestion || !beginProcessing()) return;
     try {
-      const newHistory = applySkipToHistory({
+      const { history: newHistory, decisiveCountDelta } = applySkipToHistory({
         history: questionHistory,
         questionId: currentQuestion.id,
         mappedClusters: currentQuestion.mappedClusters,
         isSharpened,
       });
       setQuestionHistory(newHistory);
+
+      // -1 means this skip is replacing an already-decisive answer
+      // (reviewing a committed sharpened answer, or reconsidering a
+      // standard one via "It Depends," and choosing to skip instead) —
+      // that row is now stale and needs deleting, not just left behind;
+      // skip itself is never written, so there's nothing to delete on a
+      // fresh skip or re-skipping an already-skipped question.
+      const newAnswered = questionsAnswered + decisiveCountDelta;
+      setQuestionsAnswered(newAnswered);
+      if (decisiveCountDelta === -1 && submissionId) {
+        const questionId = currentQuestion.id;
+        queueWrite(questionId, () => deleteResponseWithRetry({ submissionId, questionId }));
+      }
 
       const nextIdx = questionIndex + 1;
       if (nextIdx < sequence.length) {
@@ -754,12 +778,12 @@ export default function SurveyClient() {
           btResponses,
           usedIds,
           deliveryState,
-          questionsAnswered,
+          newAnswered,
           sequence.length === 21,
           latestDecisiveEntries(newHistory),
         );
         if (!next) {
-          finishSurvey(tally, questionsAnswered, sequence, btResponses);
+          finishSurvey(tally, newAnswered, sequence, btResponses);
           return;
         }
         const newSeq = [...sequence, next.question];
@@ -775,7 +799,7 @@ export default function SurveyClient() {
 
       const block = selectAdaptiveBlock(questions, tally, usedIds);
       if (block.length === 0) {
-        finishSurvey(tally, questionsAnswered, sequence, btResponses);
+        finishSurvey(tally, newAnswered, sequence, btResponses);
         return;
       }
       const newSeq = [...sequence, ...block];
@@ -797,11 +821,14 @@ export default function SurveyClient() {
     tally,
     usedIds,
     questionsAnswered,
+    submissionId,
     finishSurvey,
     btResponses,
     deliveryState,
     questionHistory,
     beginProcessing,
+    queueWrite,
+    deleteResponseWithRetry,
   ]);
 
   // Advances past a reviewed (already-answered or already-skipped)
@@ -820,8 +847,19 @@ export default function SurveyClient() {
     }
   }, [questionIndex, sequence, questionHistory, beginProcessing]);
 
+  // Sharpened wording always steps back to standard wording of the SAME
+  // question first, regardless of whether that sharpened state has
+  // already been committed (answered or skipped) — only a second Back,
+  // now on standard wording, moves to the previous question. Previously
+  // this only applied to a not-yet-committed reask; an already-answered
+  // sharpened question skipped straight past standard wording to the
+  // previous question instead, which is exactly the gap this closes.
+  // Nothing here touches which entry is recorded for this question —
+  // toggling the displayed wording is never itself a write (see
+  // applyAnswerToHistory) — so a committed sharpened answer is untouched
+  // by passing through its own standard wording on the way back out.
   const handleBack = useCallback(() => {
-    if (viewingUncommittedSharpened) {
+    if (isSharpened) {
       setIsSharpened(false);
     } else if (questionIndex > 0) {
       const prevIdx = questionIndex - 1;
@@ -831,7 +869,7 @@ export default function SurveyClient() {
       setPhase("greeting");
       setGreetingStep(2);
     }
-  }, [viewingUncommittedSharpened, questionIndex, questionHistory, sequence]);
+  }, [isSharpened, questionIndex, questionHistory, sequence]);
 
   const handleGreetingBack = () => {
     if (greetingStep === 0) router.push("/");
@@ -922,7 +960,12 @@ export default function SurveyClient() {
       )}
 
       <div className="mt-6">
-        <ProgressIndicator tally={tally} totalQuestions={HARD_STOP} questionsAnswered={questionsAnswered} />
+        <ProgressIndicator
+          tally={tally}
+          totalQuestions={HARD_STOP}
+          questionsAnswered={questionsAnswered}
+          currentQuestionNumber={questionIndex + 1}
+        />
       </div>
     </div>
   );

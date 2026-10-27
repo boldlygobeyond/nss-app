@@ -77,11 +77,21 @@ vi.mock("@/lib/supabase/client", () => ({
   createClient: () => activeMockClient,
 }));
 
-function makeChainable(resolvers: Partial<Record<"select" | "insert" | "update" | "delete", () => { data?: unknown; error?: unknown }>>) {
-  const state: { op: "select" | "insert" | "update" | "delete" } = { op: "select" };
+function makeChainable(
+  resolvers: Partial<Record<"select" | "insert" | "update" | "delete", () => { data?: unknown; error?: unknown }>>,
+  onResolve?: (op: "select" | "insert" | "update" | "delete", filters: Record<string, unknown>) => void,
+) {
+  const state: { op: "select" | "insert" | "update" | "delete"; filters: Record<string, unknown> } = {
+    op: "select",
+    filters: {},
+  };
   const builder: Record<string, unknown> = {};
   const chain = () => builder;
-  for (const m of ["select", "eq", "in", "not", "order", "limit"]) builder[m] = vi.fn(chain);
+  for (const m of ["select", "in", "not", "order", "limit"]) builder[m] = vi.fn(chain);
+  builder.eq = vi.fn((col: string, val: unknown) => {
+    state.filters[col] = val;
+    return builder;
+  });
   builder.insert = vi.fn(() => {
     state.op = "insert";
     return builder;
@@ -94,8 +104,10 @@ function makeChainable(resolvers: Partial<Record<"select" | "insert" | "update" 
     state.op = "delete";
     return builder;
   });
-  const resolve = () =>
-    Promise.resolve((resolvers[state.op] ?? resolvers.select ?? (() => ({ data: null, error: null })))());
+  const resolve = () => {
+    onResolve?.(state.op, state.filters);
+    return Promise.resolve((resolvers[state.op] ?? resolvers.select ?? (() => ({ data: null, error: null })))());
+  };
   builder.maybeSingle = vi.fn(resolve);
   builder.single = vi.fn(resolve);
   builder.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => resolve().then(res, rej);
@@ -107,6 +119,7 @@ function buildMockClient(config: {
   inProgressSubmission?: Record<string, unknown> | null;
   createdSubmission?: Record<string, unknown>;
   rpcImpl?: (name: string, args: Record<string, unknown>) => { error: unknown };
+  onResponsesDelete?: (filters: Record<string, unknown>) => void;
 }) {
   const rpcMock = vi.fn(async (name: string, args: Record<string, unknown>) => {
     if (config.rpcImpl) return config.rpcImpl(name, args);
@@ -123,7 +136,9 @@ function buildMockClient(config: {
         });
       }
       if (table === "nss_responses") {
-        return makeChainable({ select: () => ({ data: [], error: null }) });
+        return makeChainable({ select: () => ({ data: [], error: null }) }, (op, filters) => {
+          if (op === "delete") config.onResponsesDelete?.(filters);
+        });
       }
       return makeChainable({ select: () => ({ data: null, error: null }) });
     }),
@@ -337,10 +352,19 @@ describe("SurveyClient — real component, mocked Supabase only", () => {
     // Resumes straight into the survey at question 2 — no greeting shown.
     await screen.findByText(/^Q2 standard:/);
     expect(screen.queryByPlaceholderText("Your first name")).not.toBeInTheDocument();
+    // The displayed question number reflects where resume actually landed
+    // (position 2 in the restored sequence), matching the real position,
+    // not some default.
+    expect(screen.getByText("Question 2")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Back"));
     await screen.findByText(/^Q1 standard:/);
     expect(screen.getByText("Reviewing your answer")).toBeInTheDocument();
+    // Reviewing the first question after a reload shows "Question 1", not
+    // "Question 2" (frontier) and not reset to something else — restored
+    // state feeds the same questionIndex-based display real navigation
+    // uses, not a separately-tracked value that could drift after reload.
+    expect(screen.getByText("Question 1")).toBeInTheDocument();
   });
 
   it("calibration hands off to the adaptive pool at question 22 with the right decisive count", async () => {
@@ -397,5 +421,193 @@ describe("SurveyClient — real component, mocked Supabase only", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(headingText()).toBe(afterFirstAdvance);
     expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("the displayed question number reflects the question being viewed, not decisive-answer progress", async () => {
+    setMockSupabase({ userId: "user-1", createdSubmission: { id: "sub-1" } });
+    render(<SurveyClient />);
+    await driveToSurvey();
+    expect(screen.getByText("Question 1")).toBeInTheDocument();
+
+    await answer("A");
+    expect(screen.getByText("Question 2")).toBeInTheDocument();
+    await answer("A");
+    expect(screen.getByText("Question 3")).toBeInTheDocument();
+    expect(screen.getByText("4%")).toBeInTheDocument(); // 2/50 decisive
+
+    // Waits on the heading (not just the progress label, which updates a
+    // render ahead of the animated card — see waitForHeadingChange) so
+    // the card is actually settled before the next interaction.
+    let before = headingText();
+    fireEvent.click(screen.getByText("Back"));
+    await waitForHeadingChange(before);
+    expect(screen.getByText("Question 2")).toBeInTheDocument();
+    expect(screen.queryByText("Question 3")).not.toBeInTheDocument();
+    // Completion stays pinned to real decisive progress while reviewing
+    // an earlier question — reviewing never reduces it.
+    expect(screen.getByText("4%")).toBeInTheDocument();
+
+    before = headingText();
+    fireEvent.click(screen.getByText("Back"));
+    await waitForHeadingChange(before);
+    expect(screen.getByText("Question 1")).toBeInTheDocument();
+    expect(screen.getByText("4%")).toBeInTheDocument();
+
+    // Moving forward again restores the correct numbering.
+    before = headingText();
+    fireEvent.click(screen.getByText("Next"));
+    await waitForHeadingChange(before);
+    expect(screen.getByText("Question 2")).toBeInTheDocument();
+
+    before = headingText();
+    fireEvent.click(screen.getByText("Next"));
+    await waitForHeadingChange(before);
+    expect(screen.getByText("Question 3")).toBeInTheDocument();
+  });
+
+  it("Back from an already-answered sharpened question steps to standard wording first, a second Back then goes to the previous question", async () => {
+    setMockSupabase({ userId: "user-1", createdSubmission: { id: "sub-1" } });
+    render(<SurveyClient />);
+    const qA = await driveToSurvey();
+    await answer("A"); // Q(A) answered standard -> advances to Q(B)
+    const qB = currentQuestionId();
+
+    const beforeDepends = headingText();
+    fireEvent.click(screen.getByText("It Depends"));
+    await waitForHeadingChange(beforeDepends);
+    expect(isSharpenedHeading()).toBe(true);
+    await answer("B"); // commits a sharpened answer for Q(B), advances to Q(C)
+    const qC = currentQuestionId();
+    expect(qC).not.toBe(qA);
+    expect(qC).not.toBe(qB);
+
+    // First Back: restores Q(B) in sharpened wording (pre-existing behavior).
+    fireEvent.click(screen.getByText("Back"));
+    await waitFor(() => expect(currentQuestionId()).toBe(qB));
+    expect(isSharpenedHeading()).toBe(true);
+
+    // Second Back: now steps to STANDARD wording of the SAME question —
+    // the gap this fix closes. Previously an already-committed sharpened
+    // answer skipped straight past standard wording to Q(A) instead.
+    fireEvent.click(screen.getByText("Back"));
+    await waitFor(() => expect(isSharpenedHeading()).toBe(false));
+    expect(currentQuestionId()).toBe(qB);
+
+    // Third Back: now moves to the preceding question.
+    fireEvent.click(screen.getByText("Back"));
+    await waitFor(() => expect(currentQuestionId()).toBe(qA));
+  });
+
+  it("choosing a standard answer after stepping back from a committed sharpened answer replaces it, not a duplicate record", async () => {
+    const rpc = setMockSupabase({ userId: "user-1", createdSubmission: { id: "sub-1" } });
+    render(<SurveyClient />);
+    const qA = await driveToSurvey();
+    const pairA = pairForId(qA);
+
+    const beforeDepends = headingText();
+    fireEvent.click(screen.getByText("It Depends"));
+    await waitForHeadingChange(beforeDepends);
+    await answer("B"); // commits sharpened B for Q(A)
+    expect(rpc).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByText("Back")); // -> sharpened restore
+    await waitFor(() => expect(currentQuestionId()).toBe(qA));
+    fireEvent.click(screen.getByText("Back")); // -> standard wording, same question
+    await waitFor(() => expect(isSharpenedHeading()).toBe(false));
+    expect(currentQuestionId()).toBe(qA);
+
+    const beforeCorrection = headingText();
+    fireEvent.click(screen.getByText(`${pairA[0]} option`));
+    await waitForHeadingChange(beforeCorrection);
+    expect(rpc).toHaveBeenCalledTimes(2); // a correction, not an additional record
+    const lastCall = rpc.mock.calls[1][1] as Record<string, unknown>;
+    expect(lastCall).toMatchObject({ p_question_id: qA, p_is_sharpened: false, p_selection: "A" });
+  });
+
+  it("returning to the sharpened view without choosing a new answer preserves the original sharpened selection", async () => {
+    const rpc = setMockSupabase({ userId: "user-1", createdSubmission: { id: "sub-1" } });
+    render(<SurveyClient />);
+    const qA = await driveToSurvey();
+
+    const beforeDepends = headingText();
+    fireEvent.click(screen.getByText("It Depends"));
+    await waitForHeadingChange(beforeDepends);
+    await answer("B"); // commits sharpened B
+    expect(rpc).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByText("Back")); // -> sharpened restore
+    await waitFor(() => expect(currentQuestionId()).toBe(qA));
+    fireEvent.click(screen.getByText("Back")); // -> standard wording, same question
+    await waitFor(() => expect(isSharpenedHeading()).toBe(false));
+
+    // Without picking anything, return to sharpened wording via It Depends.
+    const beforeReDepends = headingText();
+    fireEvent.click(screen.getByText("It Depends"));
+    await waitForHeadingChange(beforeReDepends);
+    expect(isSharpenedHeading()).toBe(true);
+
+    // Nothing was written just by looking — still exactly the one original write.
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("Skip is available on a reviewed, already-answered sharpened question; converting it to a skip decrements the count and deletes the stale row", async () => {
+    const deletedFilters: Record<string, unknown>[] = [];
+    const rpc = setMockSupabase({
+      userId: "user-1",
+      createdSubmission: { id: "sub-1" },
+      onResponsesDelete: (filters) => deletedFilters.push(filters),
+    });
+    render(<SurveyClient />);
+    const qA = await driveToSurvey();
+
+    const beforeDepends = headingText();
+    fireEvent.click(screen.getByText("It Depends"));
+    await waitForHeadingChange(beforeDepends);
+    await answer("A"); // commits a sharpened decisive answer for Q(A)
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("2%")).toBeInTheDocument(); // 1/50 decisive so far
+
+    fireEvent.click(screen.getByText("Back"));
+    await waitFor(() => expect(currentQuestionId()).toBe(qA));
+    expect(isSharpenedHeading()).toBe(true);
+
+    // Skip must be visible here now — previously only Next was shown
+    // while reviewing a sharpened question, with no way to skip it.
+    const beforeSkip = headingText();
+    fireEvent.click(screen.getByText("Skip this one"));
+    await waitForHeadingChange(beforeSkip);
+
+    expect(deletedFilters).toEqual([{ submission_id: "sub-1", question_id: qA }]);
+    expect(screen.getByText("0%")).toBeInTheDocument(); // decisive count correctly back to 0
+    expect(rpc).toHaveBeenCalledTimes(1); // no new upsert call from skipping — the original write was deleted, not replaced
+  });
+
+  it("skipping while reconsidering a standard answer via It Depends also un-counts and deletes the prior (standard) row", async () => {
+    const deletedFilters: Record<string, unknown>[] = [];
+    const rpc = setMockSupabase({
+      userId: "user-1",
+      createdSubmission: { id: "sub-1" },
+      onResponsesDelete: (filters) => deletedFilters.push(filters),
+    });
+    render(<SurveyClient />);
+    const qA = await driveToSurvey();
+    await answer("A"); // Q(A) answered under STANDARD wording
+    expect(rpc).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByText("Back"));
+    await waitFor(() => expect(currentQuestionId()).toBe(qA));
+    expect(isSharpenedHeading()).toBe(false);
+
+    const beforeDepends = headingText();
+    fireEvent.click(screen.getByText("It Depends")); // reconsider via sharpened, nothing committed yet
+    await waitForHeadingChange(beforeDepends);
+    expect(isSharpenedHeading()).toBe(true);
+
+    const beforeSkip = headingText();
+    fireEvent.click(screen.getByText("Skip this one"));
+    await waitForHeadingChange(beforeSkip);
+
+    expect(deletedFilters).toEqual([{ submission_id: "sub-1", question_id: qA }]);
+    expect(screen.getByText("0%")).toBeInTheDocument();
   });
 });

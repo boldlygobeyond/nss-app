@@ -99,21 +99,23 @@ describe("QuestionCard — reviewing a previously answered question", () => {
     expect(onAnswer).toHaveBeenCalledWith("B");
   });
 
-  it("sharpened + reviewing shows the sharpened selection and Next in place of Skip", () => {
+  it("sharpened + reviewing shows the sharpened selection, Next, AND Skip together (Skip is never hidden while reviewing)", () => {
+    const onSkip = vi.fn();
     render(
       <QuestionCard
         question={question}
         isSharpened={true}
         onAnswer={vi.fn()}
         onItDepends={vi.fn()}
-        onSkip={vi.fn()}
+        onSkip={onSkip}
         reviewing
         selectedOption="A"
         onNext={vi.fn()}
       />,
     );
     expect(screen.getByText("Next")).toBeInTheDocument();
-    expect(screen.queryByText("Skip this one")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Skip this one"));
+    expect(onSkip).toHaveBeenCalledTimes(1);
   });
 });
 
