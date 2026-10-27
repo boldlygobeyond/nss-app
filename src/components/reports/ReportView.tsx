@@ -8,13 +8,22 @@ import LeadingNeedsSnapshot from "./LeadingNeedsSnapshot";
 import NeedsClusterReference from "./NeedsClusterReference";
 import NeedsRipple from "./NeedsRipple";
 
-function possessivePronoun(pronouns: string | null | undefined): string {
-  const p = pronouns || "";
-  // Check "she" before "he" — "she/her" contains the substring "he", so
-  // checking "he" first misclassified every she/her respondent as he/him.
-  if (p.includes("she")) return "Her";
-  if (p.includes("he")) return "His";
-  return "Their";
+// Used in the "Tips for Helping {firstName} Meet ___ Needs" manager-section
+// heading below. Matches the exact subject pronoun before the first "/"
+// rather than substring-matching the whole string — both "she/her" and
+// "they/them" contain the substring "he", so a .includes("he") check
+// misclassified she/her respondents (when checked first) and, even after
+// reordering to check "she" first, still misclassified every they/them
+// respondent as his/him because "they" itself contains "he". When the
+// pronoun set isn't recognized as he/she/they (a custom typed pronoun set,
+// "prefer not to say", or no pronoun on file), there's no safe pronoun to
+// assume, so this falls back to the person's name instead of guessing.
+export function possessiveForm(firstName: string, pronouns: string | null | undefined): string {
+  const subject = (pronouns || "").split("/")[0]?.trim().toLowerCase();
+  if (subject === "she") return "Her";
+  if (subject === "he") return "His";
+  if (subject === "they") return "Their";
+  return `${firstName}'s`;
 }
 
 const CLUSTER_LABEL_LIST = Object.values(CLUSTER_LABELS).sort((a, b) => b.length - a.length);
@@ -186,7 +195,7 @@ export default function ReportView({
           up as your best. If the topics below resonate, use them as a starting point for your conversation:
         </p>
         <p className="font-heading text-base font-bold text-foreground mb-3">
-          Tips for Helping {firstName} Meet {possessivePronoun(pronouns)} Needs
+          Tips for Helping {firstName} Meet {possessiveForm(firstName, pronouns)} Needs
         </p>
       </div>
       <div className="grid sm:grid-cols-2 gap-3">

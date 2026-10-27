@@ -6,6 +6,23 @@ import { CLUSTER_LABELS, type ClusterKey } from "./clusters";
 import type { TopNeed, PairwiseMatchup } from "./surveyEngine";
 import type { BtRanked } from "./bradleyTerry";
 
+// Used in the manager-facing "managerInsights" instructions below, the only
+// place in this prompt that uses third-person pronouns. Matches the exact
+// subject pronoun before the first "/" rather than substring-matching the
+// whole string — "they/them" and "she/her" both contain the substring "he",
+// so a .includes("he") check misclassified every they/them (and, before
+// "she" was checked first, every she/her) respondent as he/him. When the
+// pronoun set isn't recognized as he/she/they (a custom typed pronoun set,
+// or "prefer not to say"), there's no safe pronoun to assume, so the
+// instruction falls back to the person's name instead of guessing.
+export function managerPronounInstruction(firstName: string, pronouns: string): string {
+  const subject = pronouns.split("/")[0]?.trim().toLowerCase();
+  if (subject === "she") return "she/her/her pronouns";
+  if (subject === "he") return "he/his/him pronouns";
+  if (subject === "they") return "they/their/them pronouns";
+  return `the name "${firstName}" repeated instead of he/she/they pronouns, since no he/she/they pronoun set was given`;
+}
+
 function rankedList(topNeeds: TopNeed[]): string {
   return topNeeds.map((n, i) => `${i + 1}. ${CLUSTER_LABELS[n.cluster]} (${n.total} signals)`).join("\n");
 }
@@ -68,12 +85,7 @@ export function buildReportPrompt(params: {
   const stabilityNote = rankStabilityNote(rankStability, top3Labels);
 
   const pronoun = pronouns || "they/them";
-  // Check "she" before "he" — "she/her" contains the substring "he", so
-  // checking "he" first misclassified every she/her respondent as he/him.
-  const heCapital = pronoun.includes("she") ? "She" : pronoun.includes("he") ? "He" : "They";
-  const heLower = heCapital.toLowerCase();
-  const hisHer = pronoun.includes("she") ? "her" : pronoun.includes("he") ? "his" : "their";
-  const himHer = pronoun.includes("she") ? "her" : pronoun.includes("he") ? "him" : "them";
+  const pronounInstruction = managerPronounInstruction(firstName, pronoun);
 
   return `You are generating a personalized Needs Signal Report. This single document is read by the person AND shared with their manager in a 1:1 — it is not two separate reports.
 
@@ -127,10 +139,10 @@ Output ONLY a single valid JSON object, no markdown code fences, no commentary b
     }
   ],
   "managerInsights": [
-    // Exactly 4 entries, personalized using the name "${firstName}" and pronouns ${heLower}/${hisHer}/${himHer} throughout (never "they/them" unless that is the pronoun set given above).
+    // Exactly 4 entries, personalized using the name "${firstName}" and ${pronounInstruction} throughout.
     {
       "label": "A short 2-4 word bolded-style label, no trailing colon or punctuation, e.g. 'Creating Steady Ground'. Use standard title case: capitalize the main words, and keep short connecting words like 'the', 'a', 'of', and 'and' lowercase unless one of them is the first word.",
-      "body": "1 sentence written TO the manager, ABOUT ${firstName}, using ${heLower}/${hisHer}/${himHer} pronouns, explaining a concrete way the manager can support this need."
+      "body": "1 sentence written TO the manager, ABOUT ${firstName}, using ${pronounInstruction}, explaining a concrete way the manager can support this need."
     }
   ]
 }`;
@@ -209,10 +221,7 @@ export function buildReportPromptV2(params: {
   const reliabilityText = buildReliabilityGrounding({ btTop3: top3Clusters, matchups, responses });
 
   const pronoun = pronouns || "they/them";
-  const heCapital = pronoun.includes("she") ? "She" : pronoun.includes("he") ? "He" : "They";
-  const heLower = heCapital.toLowerCase();
-  const hisHer = pronoun.includes("she") ? "her" : pronoun.includes("he") ? "his" : "their";
-  const himHer = pronoun.includes("she") ? "her" : pronoun.includes("he") ? "him" : "them";
+  const pronounInstruction = managerPronounInstruction(firstName, pronoun);
 
   return `You are generating a personalized Needs Signal Report. This single document is read by the person AND shared with their manager in a 1:1 — it is not two separate reports.
 
@@ -269,10 +278,10 @@ Output ONLY a single valid JSON object, no markdown code fences, no commentary b
     }
   ],
   "managerInsights": [
-    // Exactly 4 entries, personalized using the name "${firstName}" and pronouns ${heLower}/${hisHer}/${himHer} throughout (never "they/them" unless that is the pronoun set given above).
+    // Exactly 4 entries, personalized using the name "${firstName}" and ${pronounInstruction} throughout.
     {
       "label": "A short 2-4 word bolded-style label, no trailing colon or punctuation, e.g. 'Creating Steady Ground'. Use standard title case: capitalize the main words, and keep short connecting words like 'the', 'a', 'of', and 'and' lowercase unless one of them is the first word.",
-      "body": "1 sentence written TO the manager, ABOUT ${firstName}, using ${heLower}/${hisHer}/${himHer} pronouns, explaining a concrete way the manager can support this need."
+      "body": "1 sentence written TO the manager, ABOUT ${firstName}, using ${pronounInstruction}, explaining a concrete way the manager can support this need."
     }
   ]
 }`;
