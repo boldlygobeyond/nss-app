@@ -39,6 +39,11 @@ const nextConfig: NextConfig = {
         destination: "/?source=linkedin",
         permanent: false,
       },
+      {
+        source: "/friends",
+        destination: "/?source=friends_and_family",
+        permanent: false,
+      },
     ];
   },
 };
