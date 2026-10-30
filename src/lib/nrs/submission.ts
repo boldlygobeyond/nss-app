@@ -152,3 +152,24 @@ export async function submitNrsAssessment(
 
   return { score, justCompleted: updated !== null };
 }
+
+// Belt-and-suspenders on top of submitNrsAssessment's own completion
+// guard — claims the right to send the results email only once per
+// submission, in case the submit route's after() tail somehow runs twice
+// (e.g. a platform-level retry of the original request). Zero rows back
+// means another call already claimed it; don't send again.
+export async function claimResultsEmailSend(submissionId: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("nrs_submissions")
+    .update({ results_email_sent_at: new Date().toISOString() })
+    .eq("id", submissionId)
+    .is("results_email_sent_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    console.error("[nrs] failed to claim results-email send:", error);
+    return false;
+  }
+  return data !== null;
+}
