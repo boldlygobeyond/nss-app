@@ -15,6 +15,15 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     const result = await removeRosterEntry(rosterId);
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof Error && error.message === "NRS_HISTORY_BLOCKS_REMOVAL") {
+      return NextResponse.json(
+        {
+          error:
+            "Can't remove — this person has Needs Resonance Scan history. Remove their NRS data first if you really need to remove them.",
+        },
+        { status: 409 },
+      );
+    }
     console.error("[teams/roster/delete] failed:", error);
     return NextResponse.json({ error: "Could not remove that person. Please try again." }, { status: 500 });
   }

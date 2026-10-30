@@ -28,6 +28,7 @@ import { computeTeamMemberScores, computeTeamRowOrder, type TeamMemberScore } fr
 import { latestResponsePerQuestion } from "@/lib/nss/responseDedup";
 import TeamNeedsHeatmap from "@/components/teams/TeamNeedsHeatmap";
 import NeedsSpectrum from "@/components/teams/NeedsSpectrum";
+import NrsTabPanel from "@/components/admin/nrs/NrsTabPanel";
 import GlobalHeader from "@/components/GlobalHeader";
 
 interface Team {
@@ -69,7 +70,7 @@ const NSS_STATUS_COLOR: Record<NssStatus, string> = {
   complete: "bg-emerald-500",
 };
 
-type Tab = "roster" | "reports" | "snapshot";
+type Tab = "roster" | "reports" | "snapshot" | "nrs";
 type SendState = "idle" | "sending" | "sent" | "error";
 
 function formatDate(ts: string) {
@@ -77,7 +78,7 @@ function formatDate(ts: string) {
 }
 
 function isTab(value: string | null): value is Tab {
-  return value === "roster" || value === "reports" || value === "snapshot";
+  return value === "roster" || value === "reports" || value === "snapshot" || value === "nrs";
 }
 
 interface OrgTreeNode {
@@ -354,6 +355,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
 
   const [sendState, setSendState] = useState<Record<string, SendState>>({});
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const [resyncing, setResyncing] = useState(false);
   const [resyncResult, setResyncResult] = useState<string | null>(null);
   const [resyncError, setResyncError] = useState<string | null>(null);
@@ -632,9 +634,15 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     if (!confirmed || !team) return;
 
     setRemovingId(entry.id);
+    setRemoveError(null);
     try {
       const res = await fetch(`/api/nss/teams/${team.slug}/roster/${entry.id}`, { method: "DELETE" });
-      if (res.ok) await loadRoster(team.id);
+      if (res.ok) {
+        await loadRoster(team.id);
+      } else {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        setRemoveError(body.error || "Could not remove that person. Please try again.");
+      }
     } finally {
       setRemovingId(null);
     }
@@ -712,6 +720,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                 ["roster", "Roster"],
                 ["reports", "Reports"],
                 ["snapshot", "Team Snapshot"],
+                ["nrs", "Needs Resonance Scan"],
               ] as const).map(([key, label]) => (
                 <button
                   key={key}
@@ -763,6 +772,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                 </div>
                 {resyncResult && <p className="text-xs text-muted-foreground mb-3">{resyncResult}</p>}
                 {resyncError && <p className="text-xs text-destructive mb-3">{resyncError}</p>}
+                {removeError && <p className="text-xs text-destructive mb-3">{removeError}</p>}
 
                 <div className="overflow-x-auto rounded-xl border border-border/50 mb-6">
                   <table className="w-full border-collapse">
@@ -908,6 +918,13 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                     );
                   })()
                 )}
+              </div>
+            )}
+
+            {tab === "nrs" && team && (
+              <div>
+                <h2 className="font-heading text-sm font-semibold text-foreground mb-3">Needs Resonance Scan</h2>
+                <NrsTabPanel teamId={team.id} teamSlug={slug} />
               </div>
             )}
           </>

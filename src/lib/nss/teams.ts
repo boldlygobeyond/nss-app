@@ -157,7 +157,18 @@ export async function removeRosterEntry(rosterId: string): Promise<{ accountDele
   if (entryError || !entry) throw entryError ?? new Error("Roster entry not found");
 
   const { error: deleteError } = await admin.from("team_roster").delete().eq("id", rosterId);
-  if (deleteError) throw deleteError;
+  if (deleteError) {
+    // nrs_submissions.roster_id is a required FK with ON DELETE RESTRICT
+    // (see supabase/migrations/0022_nrs_schema.sql) — removing a roster
+    // member who has any NRS history is blocked at the DB level rather
+    // than silently cascading that history away. 23503 is Postgres's
+    // foreign_key_violation code; the caller (the DELETE route) turns
+    // this into an admin-facing message instead of a raw DB error.
+    if (deleteError.code === "23503") {
+      throw new Error("NRS_HISTORY_BLOCKS_REMOVAL");
+    }
+    throw deleteError;
+  }
 
   if (!entry.invited_at) return { accountDeleted: false };
 
