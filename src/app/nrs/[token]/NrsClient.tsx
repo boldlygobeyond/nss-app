@@ -190,7 +190,7 @@ export default function NrsClient({ token }: { token: string }) {
             Thanks{data ? `, ${data.participantFirstName}` : ""}!
           </h2>
           <p className="text-muted-foreground">
-            Your response has been recorded. Keep an eye on your inbox for your {data?.clusterName ?? "results"}.
+            Your response has been recorded. Keep an eye on your inbox for your {data?.clusterName ?? ""} results.
           </p>
         </motion.div>
       </div>
