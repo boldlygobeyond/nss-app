@@ -5,7 +5,14 @@ import type { ClusterScore } from "@/lib/nss/surveyEngine";
 
 function ClusterPill({ cluster }: { cluster: ClusterKey }) {
   return (
-    <span className="inline-flex items-center gap-2 bg-white rounded-full px-3.5 py-1.5 text-sm font-semibold text-foreground">
+    // text-[#0f1729], not text-foreground: this pill's bg-white is a fixed
+    // card color that never changes with the site's dark-mode toggle (see
+    // SnapshotCard below), but text-foreground does — it goes near-white
+    // in dark mode, which made this text disappear against its own
+    // always-light background. Fixed to the same hex as --foreground's
+    // light-mode value (globals.css), so it reads identically regardless
+    // of site theme, matching the card's own fixed-light design.
+    <span className="inline-flex items-center gap-2 bg-white rounded-full px-3.5 py-1.5 text-sm font-semibold text-[#0f1729]">
       <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: CLUSTER_COLORS[cluster] }} />
       {CLUSTER_LABELS[cluster]}
     </span>
@@ -36,7 +43,8 @@ function SnapshotCard({
         >
           {icon}
         </div>
-        <p className="font-heading text-base font-bold text-foreground">{title}</p>
+        {/* text-[#0f1729], not text-foreground — same fixed-color fix as ClusterPill above. */}
+        <p className="font-heading text-base font-bold text-[#0f1729]">{title}</p>
       </div>
       <div className="flex flex-wrap gap-2">
         {clusters.map((cluster) => (
