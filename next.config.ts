@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Lets `next dev` be reached through a Cloudflare quick tunnel (random
+  // *.trycloudflare.com host per run) for testing from devices that can't
+  // reach localhost directly. Next's dev server otherwise rejects
+  // cross-origin requests (including the HMR websocket) as a DNS-rebinding
+  // guard, which is why a tunneled page spins forever without this. Dev-only
+  // — has no effect on `next build`/production.
+  allowedDevOrigins: ["*.trycloudflare.com"],
   // @sparticuz/chromium is auto-externalized by Next.js, but its bin/
   // folder (the compressed Chromium binary itself) isn't picked up by the
   // default file trace since it's read dynamically at runtime, not
