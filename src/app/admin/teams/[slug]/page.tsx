@@ -29,6 +29,7 @@ import { latestResponsePerQuestion } from "@/lib/nss/responseDedup";
 import TeamNeedsHeatmap from "@/components/teams/TeamNeedsHeatmap";
 import NeedsSpectrum from "@/components/teams/NeedsSpectrum";
 import NrsTabPanel from "@/components/admin/nrs/NrsTabPanel";
+import NrsTeamSnapshot from "@/components/admin/nrs/NrsTeamSnapshot";
 import GlobalHeader from "@/components/GlobalHeader";
 
 interface Team {
@@ -70,7 +71,7 @@ const NSS_STATUS_COLOR: Record<NssStatus, string> = {
   complete: "bg-emerald-500",
 };
 
-type Tab = "roster" | "reports" | "snapshot" | "nrs";
+type Tab = "roster" | "reports" | "snapshot" | "nrs" | "nrsSnapshot";
 type SendState = "idle" | "sending" | "sent" | "error";
 
 function formatDate(ts: string) {
@@ -78,7 +79,9 @@ function formatDate(ts: string) {
 }
 
 function isTab(value: string | null): value is Tab {
-  return value === "roster" || value === "reports" || value === "snapshot" || value === "nrs";
+  return (
+    value === "roster" || value === "reports" || value === "snapshot" || value === "nrs" || value === "nrsSnapshot"
+  );
 }
 
 interface OrgTreeNode {
@@ -721,6 +724,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                 ["reports", "Reports"],
                 ["snapshot", "NSS Team Snapshot"],
                 ["nrs", "Needs Resonance Scan"],
+                ["nrsSnapshot", "NRS Team Snapshot"],
               ] as const).map(([key, label]) => (
                 <button
                   key={key}
@@ -925,6 +929,13 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
               <div>
                 <h2 className="font-heading text-sm font-semibold text-foreground mb-3">Needs Resonance Scan</h2>
                 <NrsTabPanel teamId={team.id} teamSlug={slug} />
+              </div>
+            )}
+
+            {tab === "nrsSnapshot" && team && (
+              <div>
+                <h2 className="font-heading text-sm font-semibold text-foreground mb-3">NRS Team Snapshot</h2>
+                <NrsTeamSnapshot teamId={team.id} />
               </div>
             )}
           </>
