@@ -115,6 +115,51 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId, clusterKey]);
 
+  // Polled every few seconds so a participant's status dot moves from
+  // invited -> in_progress -> completed on its own while they're actually
+  // taking the assessment elsewhere, without the admin reloading the page
+  // or having to personally trigger an action first — mirrors the
+  // Roster tab's equivalent NSS status polling (pollNssStatus in the
+  // parent page). Keeps everything else on the row (name/email) as-is;
+  // only the submission fields get refreshed. The dashboard metric cards
+  // above the table are all derived from `rows` at render time, so they
+  // stay live for free too.
+  const pollNrsStatus = async () => {
+    const supabase = createClient();
+    const { data: submissions } = await supabase
+      .from("nrs_submissions")
+      .select("id, roster_id, status, invited_at, last_reminder_at, completed_at, resonance_score")
+      .eq("cluster_key", clusterKey);
+    if (!submissions) return;
+    const byRosterId = new Map(submissions.map((s) => [s.roster_id, s]));
+    setRows((prev) =>
+      prev
+        ? prev.map((r) => {
+            const s = byRosterId.get(r.rosterId);
+            return {
+              ...r,
+              submission: s
+                ? {
+                    id: s.id,
+                    status: s.status as NrsSubmissionStatus,
+                    invitedAt: s.invited_at,
+                    lastReminderAt: s.last_reminder_at,
+                    completedAt: s.completed_at,
+                    resonanceScore: s.resonance_score,
+                  }
+                : null,
+            };
+          })
+        : prev,
+    );
+  };
+
+  useEffect(() => {
+    const interval = setInterval(pollNrsStatus, 5000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamId, clusterKey]);
+
   const setRowState = (rosterId: string, state: SendState) => {
     setSendState((s) => ({ ...s, [rosterId]: state }));
     if (state === "sent" || state === "error") {

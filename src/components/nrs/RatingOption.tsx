@@ -4,8 +4,12 @@ import { useEffect, useRef, useState } from "react";
 
 // No tooltip/popover library exists in this codebase — this is a small,
 // self-contained accessible equivalent. Reveal triggers: hover (mouse),
-// focus/blur (keyboard), and a pinned tap-to-reveal for touch, dismissed
-// by tapping anywhere outside the option.
+// focus-visible (keyboard only — CSS :focus-visible, not plain :focus, so
+// clicking the button doesn't leave the tooltip "stuck" open the way a
+// JS onFocus/onBlur pair would, since a mouse click does focus the button
+// but browsers don't count that as focus-visible), and a pinned
+// tap-to-reveal for touch, dismissed by tapping anywhere outside the
+// option.
 export default function RatingOption({
   idPrefix,
   value,
@@ -26,11 +30,10 @@ export default function RatingOption({
   onSelect: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
-  const [focused, setFocused] = useState(false);
   const [pinned, setPinned] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const descId = `nrs-rating-desc-${idPrefix}-${value}`;
-  const revealed = hovered || focused || pinned;
+  const revealed = hovered || pinned;
 
   useEffect(() => {
     if (!pinned) return;
@@ -61,12 +64,10 @@ export default function RatingOption({
         onClick={onSelect}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
         onTouchStart={handleTouchStart}
         aria-describedby={descId}
         aria-pressed={selected}
-        className={`w-full flex flex-col items-center gap-1 sm:gap-1.5 py-3 sm:py-4 px-1 sm:px-2 rounded-xl border transition-all ${
+        className={`peer w-full flex flex-col items-center gap-1 sm:gap-1.5 py-3 sm:py-4 px-1 sm:px-2 rounded-xl border transition-all ${
           selected
             ? "bg-primary/10 border-primary/50"
             : "bg-transparent border-border/50 hover:bg-secondary/60 hover:border-border"
@@ -82,8 +83,8 @@ export default function RatingOption({
       <span
         id={descId}
         role="tooltip"
-        className={`absolute top-full mt-2 w-40 sm:w-48 text-center text-xs text-muted-foreground bg-card border border-border/50 rounded-lg px-3 py-2 shadow-md z-10 transition-opacity ${
-          revealed ? "opacity-100" : "opacity-0 pointer-events-none"
+        className={`absolute top-full mt-2 w-40 sm:w-48 text-center text-xs text-muted-foreground bg-card border border-border/50 rounded-lg px-3 py-2 shadow-md z-10 transition-opacity pointer-events-none ${
+          revealed ? "opacity-100" : "opacity-0 peer-focus-visible:opacity-100"
         }`}
       >
         {description}

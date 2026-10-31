@@ -719,7 +719,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
               {([
                 ["roster", "Roster"],
                 ["reports", "Reports"],
-                ["snapshot", "Team Snapshot"],
+                ["snapshot", "NSS Team Snapshot"],
                 ["nrs", "Needs Resonance Scan"],
               ] as const).map(([key, label]) => (
                 <button
