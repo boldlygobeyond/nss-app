@@ -5,14 +5,11 @@ import type { ClusterScore } from "@/lib/nss/surveyEngine";
 
 function ClusterPill({ cluster }: { cluster: ClusterKey }) {
   return (
-    // text-[#0f1729], not text-foreground: this pill's bg-white is a fixed
-    // card color that never changes with the site's dark-mode toggle (see
-    // SnapshotCard below), but text-foreground does — it goes near-white
-    // in dark mode, which made this text disappear against its own
-    // always-light background. Fixed to the same hex as --foreground's
-    // light-mode value (globals.css), so it reads identically regardless
-    // of site theme, matching the card's own fixed-light design.
-    <span className="inline-flex items-center gap-2 bg-white rounded-full px-3.5 py-1.5 text-sm font-semibold text-[#0f1729]">
+    // bg-card/text-card-foreground, not bg-white/text-[hex]: those are the
+    // paired tokens the rest of the app uses for "a surface sitting on a
+    // tinted background," so this pill is guaranteed readable in both
+    // themes without a hardcoded color.
+    <span className="inline-flex items-center gap-2 bg-card text-card-foreground rounded-full px-3.5 py-1.5 text-sm font-semibold">
       <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: CLUSTER_COLORS[cluster] }} />
       {CLUSTER_LABELS[cluster]}
     </span>
@@ -20,14 +17,18 @@ function ClusterPill({ cluster }: { cluster: ClusterKey }) {
 }
 
 function SnapshotCard({
-  bg,
+  tint,
   iconBg,
   iconShape,
   icon,
   title,
   clusters,
 }: {
-  bg: string;
+  // Low-opacity tints of theme tokens (e.g. bg-primary/10), matching the
+  // "Key Pattern" callout's bg-accent/5 in ReportView.tsx — a tint over the
+  // page's own background, not a fixed opaque hex, so it reads as a subtle
+  // light wash in light mode and a subtle dark wash in dark mode.
+  tint: string;
   iconBg: string;
   iconShape: "circle" | "square";
   icon: ReactNode;
@@ -35,16 +36,14 @@ function SnapshotCard({
   clusters: ClusterKey[];
 }) {
   return (
-    <div className="rounded-2xl p-5 print:break-inside-avoid" style={{ backgroundColor: bg }}>
+    <div className={`rounded-2xl p-5 print:break-inside-avoid ${tint}`}>
       <div className="flex items-center gap-3.5 mb-3.5">
         <div
-          className={`w-9 h-9 flex items-center justify-center shrink-0 ${iconShape === "circle" ? "rounded-full" : "rounded-xl"}`}
-          style={{ backgroundColor: iconBg }}
+          className={`w-9 h-9 flex items-center justify-center shrink-0 ${iconShape === "circle" ? "rounded-full" : "rounded-xl"} ${iconBg}`}
         >
           {icon}
         </div>
-        {/* text-[#0f1729], not text-foreground — same fixed-color fix as ClusterPill above. */}
-        <p className="font-heading text-base font-bold text-[#0f1729]">{title}</p>
+        <p className="font-heading text-base font-bold text-foreground">{title}</p>
       </div>
       <div className="flex flex-wrap gap-2">
         {clusters.map((cluster) => (
@@ -71,10 +70,10 @@ export default function LeadingNeedsSnapshot({ scores }: { scores: Record<Cluste
   return (
     <div className="flex flex-col gap-4">
       <SnapshotCard
-        bg="#E3F1F1"
-        iconBg="#008B93"
+        tint="bg-primary/10"
+        iconBg="bg-primary"
         iconShape="circle"
-        icon={<ArrowUpRight className="w-4 h-4 text-white" strokeWidth={2.5} />}
+        icon={<ArrowUpRight className="w-4 h-4 text-primary-foreground" strokeWidth={2.5} />}
         title="Your Leading Needs"
         clusters={leading}
       />
@@ -82,10 +81,10 @@ export default function LeadingNeedsSnapshot({ scores }: { scores: Record<Cluste
         Your other needs are important, too. They just didn&apos;t emerge as strongly in your choices.
       </p>
       <SnapshotCard
-        bg="#EFEEF8"
-        iconBg="#DAD9EC"
+        tint="bg-accent/10"
+        iconBg="bg-accent/20"
         iconShape="square"
-        icon={<Grid2x2 className="w-4 h-4" style={{ color: "#6B6C8A" }} strokeWidth={2.5} />}
+        icon={<Grid2x2 className="w-4 h-4 text-accent" strokeWidth={2.5} />}
         title="Your Other Needs"
         clusters={other}
       />
