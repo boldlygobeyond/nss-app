@@ -19,6 +19,17 @@ const PUBLIC_PATH_PREFIXES = [
   // Resend's servers, not a logged-in user — authenticated via Svix
   // signature verification inside the route itself.
   "/api/nss/resend-webhook",
+  // NRS participant assessment page and its token-gated API routes — a
+  // participant clicking their invite/reminder link has no Supabase
+  // session at all (see src/lib/nrs/submission.ts), so this gate would
+  // otherwise bounce every real participant to "/" (or 401 every API
+  // call) before the route's own access_token check ever runs. The admin
+  // NRS routes sharing this prefix (invite/resend-invite/remind/remind-all)
+  // stay safe despite this: each calls requireAdmin() itself, which does
+  // its own independent session + role check, same as every other admin
+  // route in this app.
+  "/nrs/",
+  "/api/nrs/",
 ];
 
 export async function proxy(request: NextRequest) {
