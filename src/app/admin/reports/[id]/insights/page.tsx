@@ -241,7 +241,7 @@ export default function InsightsPage({ params }: { params: Promise<{ id: string 
         </p>
 
         {data.duplicateResponsesRemoved > 0 && (
-          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+          <p className="text-sm text-amber-700 dark:text-amber-400 bg-amber-500/15 border border-amber-500/40 rounded-lg px-3 py-2 mb-4">
             {data.duplicateResponsesRemoved} question{data.duplicateResponsesRemoved === 1 ? "" : "s"} below had more
             than one stored response — everything here and in scoring uses only the most recent answer to each.
           </p>
