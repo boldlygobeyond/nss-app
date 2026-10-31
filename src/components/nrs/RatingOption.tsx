@@ -7,12 +7,18 @@ import { useEffect, useRef, useState } from "react";
 // focus/blur (keyboard), and a pinned tap-to-reveal for touch, dismissed
 // by tapping anywhere outside the option.
 export default function RatingOption({
+  idPrefix,
   value,
   label,
   description,
   selected,
   onSelect,
 }: {
+  // Scopes the description's id to the question it belongs to — needed
+  // once multiple questions' rating rows are on the page at once (the
+  // single-page assessment layout), since `value` alone (1-5) repeats
+  // across every question.
+  idPrefix: number | string;
   value: number;
   label: string;
   description: string;
@@ -23,7 +29,7 @@ export default function RatingOption({
   const [focused, setFocused] = useState(false);
   const [pinned, setPinned] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const descId = `nrs-rating-desc-${value}`;
+  const descId = `nrs-rating-desc-${idPrefix}-${value}`;
   const revealed = hovered || focused || pinned;
 
   useEffect(() => {

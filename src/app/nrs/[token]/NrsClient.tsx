@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import NrsProgressIndicator from "@/components/nrs/NrsProgressIndicator";
 import RatingOption from "@/components/nrs/RatingOption";
 import { NRS_RATINGS } from "@/lib/nrs/ratingScale";
@@ -36,7 +36,6 @@ export default function NrsClient({ token }: { token: string }) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [data, setData] = useState<NrsData | null>(null);
   const [responses, setResponses] = useState<Record<number, number>>({});
-  const [currentIndex, setCurrentIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -67,8 +66,6 @@ export default function NrsClient({ token }: { token: string }) {
           return;
         }
 
-        const firstUnanswered = body.questions.findIndex((q) => initialResponses[q.id] === undefined);
-        setCurrentIndex(firstUnanswered === -1 ? Math.max(body.questions.length - 1, 0) : firstUnanswered);
         setPhase("assessment");
       } catch {
         if (!cancelled) setPhase("error");
@@ -79,52 +76,38 @@ export default function NrsClient({ token }: { token: string }) {
     };
   }, [token]);
 
-  const persistLocal = (nextResponses: Record<number, number>, nextIndex: number) => {
+  const persistLocal = (nextResponses: Record<number, number>) => {
     try {
-      localStorage.setItem(`${STORAGE_PREFIX}${token}`, JSON.stringify({ responses: nextResponses, currentIndex: nextIndex }));
+      localStorage.setItem(`${STORAGE_PREFIX}${token}`, JSON.stringify({ responses: nextResponses }));
     } catch {
       // best-effort only
     }
   };
 
-  const currentQuestion = data?.questions[currentIndex] ?? null;
   const total = data?.questions.length ?? 10;
-  const allAnswered = useMemo(
-    () => !!data && data.questions.every((q) => responses[q.id] !== undefined),
+  const answeredCount = useMemo(
+    () => (data ? data.questions.filter((q) => responses[q.id] !== undefined).length : 0),
     [data, responses],
   );
+  const allAnswered = !!data && answeredCount === data.questions.length;
 
-  const handleSelect = async (rating: number) => {
-    if (!currentQuestion || submitting) return;
-    const next = { ...responses, [currentQuestion.id]: rating };
+  const handleSelect = async (questionId: number, rating: number) => {
+    if (submitting) return;
+    const next = { ...responses, [questionId]: rating };
     setResponses(next);
     setErrorMessage(null);
-    persistLocal(next, currentIndex);
+    persistLocal(next);
 
     try {
       const res = await fetch(`/api/nrs/${token}/responses`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId: currentQuestion.id, rating }),
+        body: JSON.stringify({ questionId, rating }),
       });
       if (!res.ok) throw new Error("save failed");
     } catch {
       setErrorMessage("Your last answer may not have saved. Check your connection and try again if this continues.");
     }
-  };
-
-  const handleNext = () => {
-    if (!data || currentIndex >= data.questions.length - 1) return;
-    const nextIndex = currentIndex + 1;
-    setCurrentIndex(nextIndex);
-    persistLocal(responses, nextIndex);
-  };
-
-  const handleBack = () => {
-    if (currentIndex === 0) return;
-    const prevIndex = currentIndex - 1;
-    setCurrentIndex(prevIndex);
-    persistLocal(responses, prevIndex);
   };
 
   const handleSubmit = async () => {
@@ -197,11 +180,11 @@ export default function NrsClient({ token }: { token: string }) {
     );
   }
 
-  if (!data || !currentQuestion) return null;
+  if (!data) return null;
 
   return (
     <div className="flex-1 max-w-2xl w-full mx-auto px-4 py-6 flex flex-col">
-      <NrsProgressIndicator current={currentIndex + 1} total={total} />
+      <NrsProgressIndicator current={answeredCount} total={total} />
 
       {errorMessage && (
         <div
@@ -219,67 +202,55 @@ export default function NrsClient({ token }: { token: string }) {
         </div>
       )}
 
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={currentQuestion.id}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -20 }}
-          transition={{ duration: 0.3 }}
-          className="bg-card rounded-2xl border border-border/50 shadow-sm p-6 md:p-8"
-        >
-          <h2 className="font-heading text-lg md:text-xl font-medium text-foreground mb-6 leading-relaxed">
-            {currentQuestion.scenarioText}
-          </h2>
-          <p className="text-sm text-foreground font-medium mb-1">
-            How important is it that this need is met here for you to show up fully?
-          </p>
-          <p className="text-xs text-muted-foreground mb-5">Hover over a rating to learn more.</p>
-
-          <div className="grid grid-cols-5 gap-1.5 sm:gap-3">
-            {NRS_RATINGS.map((r) => (
-              <RatingOption
-                key={r.value}
-                value={r.value}
-                label={r.label}
-                description={r.description}
-                selected={responses[currentQuestion.id] === r.value}
-                onSelect={() => handleSelect(r.value)}
-              />
-            ))}
-          </div>
-        </motion.div>
-      </AnimatePresence>
-
-      <div className="mt-6 flex items-center justify-between">
-        <button
-          onClick={handleBack}
-          disabled={currentIndex === 0}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:pointer-events-none"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back
-        </button>
-
-        {currentIndex < data.questions.length - 1 ? (
-          <button
-            onClick={handleNext}
-            disabled={responses[currentQuestion.id] === undefined}
-            className="px-6 py-2 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:pointer-events-none"
+      <div className="flex flex-col gap-6">
+        {data.questions.map((question, i) => (
+          <motion.div
+            key={question.id}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            // Capped stagger delay — a gentle entrance for the first few
+            // cards without making the admin/participant wait through 10
+            // sequential delays to see the bottom of a 10-question page.
+            transition={{ duration: 0.3, delay: Math.min(i * 0.04, 0.3) }}
+            className="bg-card rounded-2xl border border-border/50 shadow-sm p-6 md:p-8"
           >
-            Next
-          </button>
-        ) : (
-          <button
-            onClick={handleSubmit}
-            disabled={!allAnswered || submitting}
-            className="px-6 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:pointer-events-none"
-          >
-            {submitting ? "Submitting..." : "Submit"}
-          </button>
+            <p className="text-xs font-medium text-muted-foreground mb-2">Scenario {question.order}</p>
+            <h2 className="font-heading text-lg md:text-xl font-medium text-foreground mb-6 leading-relaxed">
+              {question.scenarioText}
+            </h2>
+            <p className="text-sm text-foreground font-medium mb-1">
+              How important is it that this need is met here for you to show up fully?
+            </p>
+            <p className="text-xs text-muted-foreground mb-5">Hover over a rating to learn more.</p>
+
+            <div className="grid grid-cols-5 gap-1.5 sm:gap-3">
+              {NRS_RATINGS.map((r) => (
+                <RatingOption
+                  key={r.value}
+                  idPrefix={question.id}
+                  value={r.value}
+                  label={r.label}
+                  description={r.description}
+                  selected={responses[question.id] === r.value}
+                  onSelect={() => handleSelect(question.id, r.value)}
+                />
+              ))}
+            </div>
+          </motion.div>
+        ))}
+      </div>
+
+      <div className="mt-8 flex flex-col items-end gap-2">
+        {!allAnswered && (
+          <p className="text-xs text-muted-foreground">{total - answeredCount} more to answer before you can submit</p>
         )}
+        <button
+          onClick={handleSubmit}
+          disabled={!allAnswered || submitting}
+          className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+        >
+          {submitting ? "Submitting..." : "Submit"}
+        </button>
       </div>
     </div>
   );

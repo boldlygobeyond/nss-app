@@ -12,7 +12,7 @@ export default function NrsProgressIndicator({ current, total }: { current: numb
     <div className="w-full max-w-2xl mx-auto mb-6">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs text-muted-foreground font-body">
-          Scenario {current} of {total}
+          {current} of {total} answered
         </span>
         <span className="text-xs text-muted-foreground font-body">{Math.round(progress)}%</span>
       </div>
