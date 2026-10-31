@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/nss/requireAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendNrsInviteEmail } from "@/lib/nrs/nrsInviteEmail";
 import { logNrsSend } from "@/lib/nrs/sendLog";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 
 // Admin-only. An intentional resend to an already-invited, incomplete
 // participant — reuses the submission's existing access_token (never
@@ -14,7 +15,7 @@ export async function POST(request: Request) {
   const admin = await requireAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: admin.status });
 
-  const { origin } = new URL(request.url);
+  const origin = getPublicOrigin(request);
   const { submissionId } = await request.json();
   if (!submissionId) {
     return NextResponse.json({ error: "submissionId is required" }, { status: 400 });

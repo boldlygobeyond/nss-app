@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 import { getSubmissionByToken, submitNrsAssessment, claimResultsEmailSend } from "@/lib/nrs/submission";
 import { sendNrsResultsEmail } from "@/lib/nrs/nrsResultsEmail";
 import { logNrsSend } from "@/lib/nrs/sendLog";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 
 // Finalizes the assessment: verifies all scenarios are answered, computes
 // and stores the resonance score, and returns it. Safe to call twice in a
@@ -11,7 +12,7 @@ import { logNrsSend } from "@/lib/nrs/sendLog";
 // only ever fires on the call that actually transitioned the row.
 export async function POST(request: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const { origin } = new URL(request.url);
+  const origin = getPublicOrigin(request);
   const submission = await getSubmissionByToken(token);
   if (!submission) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

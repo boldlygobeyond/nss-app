@@ -5,6 +5,7 @@ import { createNrsSubmission } from "@/lib/nrs/submission";
 import { sendNrsInviteEmail } from "@/lib/nrs/nrsInviteEmail";
 import { logNrsSend } from "@/lib/nrs/sendLog";
 import type { ClusterKey } from "@/lib/nss/clusters";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 
 // Admin-only. One route for both "Individual Send" (a single-element
 // rosterIds) and "Send to All" (every not-yet-invited id) — a single code
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
   const admin = await requireAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: admin.status });
 
-  const { origin } = new URL(request.url);
+  const origin = getPublicOrigin(request);
   const { teamSlug, clusterKey, rosterIds } = await request.json();
   if (!teamSlug?.trim() || !clusterKey || !Array.isArray(rosterIds) || rosterIds.length === 0) {
     return NextResponse.json(

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/nss/requireAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { claimAndSendReminder } from "@/lib/nrs/reminder";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 
 // Admin-only. Sends the reminder to every invited-but-incomplete
 // participant on this team, for this cluster. The server resolves the
@@ -14,7 +15,7 @@ export async function POST(request: Request) {
   const admin = await requireAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: admin.status });
 
-  const { origin } = new URL(request.url);
+  const origin = getPublicOrigin(request);
   const { teamSlug, clusterKey } = await request.json();
   if (!teamSlug?.trim() || !clusterKey) {
     return NextResponse.json({ error: "teamSlug and clusterKey are required" }, { status: 400 });
