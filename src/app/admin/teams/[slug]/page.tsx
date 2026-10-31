@@ -14,6 +14,7 @@ import {
   Trash2,
   ChevronDown,
   ChevronRight,
+  ExternalLink,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, listAllProfiles } from "@/lib/nss/userProfiles";
@@ -729,6 +730,17 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="font-heading text-sm font-semibold text-foreground">Roster</h2>
                   <div className="flex items-center gap-2">
+                    {team.drive_spreadsheet_id && (
+                      <a
+                        href={`https://docs.google.com/spreadsheets/d/${team.drive_spreadsheet_id}/edit`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium border border-border/50 rounded-lg hover:bg-secondary transition-colors"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Open sheet
+                      </a>
+                    )}
                     {team.drive_spreadsheet_id && (
                       <button
                         onClick={handleResync}
