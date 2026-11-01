@@ -71,7 +71,7 @@ const NSS_STATUS_COLOR: Record<NssStatus, string> = {
   complete: "bg-emerald-500",
 };
 
-type Tab = "roster" | "reports" | "snapshot" | "nrs" | "nrsSnapshot";
+type Tab = "roster" | "nssInvites" | "reports" | "snapshot" | "nrs" | "nrsSnapshot";
 type SendState = "idle" | "sending" | "sent" | "error";
 
 function formatDate(ts: string) {
@@ -80,7 +80,12 @@ function formatDate(ts: string) {
 
 function isTab(value: string | null): value is Tab {
   return (
-    value === "roster" || value === "reports" || value === "snapshot" || value === "nrs" || value === "nrsSnapshot"
+    value === "roster" ||
+    value === "nssInvites" ||
+    value === "reports" ||
+    value === "snapshot" ||
+    value === "nrs" ||
+    value === "nrsSnapshot"
   );
 }
 
@@ -721,7 +726,8 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
             <div className="flex items-center gap-1 bg-card border border-border/50 rounded-lg p-1 mb-8 w-fit">
               {([
                 ["roster", "Roster"],
-                ["reports", "Reports"],
+                ["nssInvites", "NSS Invites"],
+                ["reports", "NSS Reports"],
                 ["snapshot", "NSS Team Snapshot"],
                 ["nrs", "Needs Resonance Scan"],
                 ["nrsSnapshot", "NRS Team Snapshot"],
@@ -764,14 +770,6 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                         Resync from sheet
                       </button>
                     )}
-                    {pendingCount > 0 && (
-                      <button
-                        onClick={sendAllPending}
-                        className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-                      >
-                        <Send className="w-3.5 h-3.5" /> Send all pending ({pendingCount})
-                      </button>
-                    )}
                   </div>
                 </div>
                 {resyncResult && <p className="text-xs text-muted-foreground mb-3">{resyncResult}</p>}
@@ -782,10 +780,68 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                   <table className="w-full border-collapse">
                     <thead className="bg-secondary">
                       <tr>
-                        <th className="p-3 w-8" />
                         <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Name</th>
                         <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</th>
                         <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Manager</th>
+                        <th className="p-3" />
+                      </tr>
+                    </thead>
+                    <tbody className="bg-card">
+                      {roster.map((entry) => (
+                        <tr key={entry.id} className="border-b border-border/30 last:border-0">
+                          <td className="p-3 text-sm text-foreground">
+                            {entry.first_name} {entry.last_name}
+                            {entry.missing_from_sheet && (
+                              <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                                <AlertTriangle className="w-2.5 h-2.5" /> Not in sheet
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 text-sm text-muted-foreground break-all">{entry.email}</td>
+                          <td className="p-3 text-sm text-muted-foreground break-all">{entry.manager_email}</td>
+                          <td className="p-3">
+                            <button
+                              onClick={() => handleRemove(entry)}
+                              disabled={removingId === entry.id}
+                              title="Remove from roster"
+                              className="flex items-center justify-center h-8 w-8 shrink-0 text-muted-foreground border border-border/50 rounded-lg hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors disabled:opacity-50 ml-auto"
+                            >
+                              {removingId === entry.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {tab === "nssInvites" && (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="font-heading text-sm font-semibold text-foreground">NSS Invites</h2>
+                  {pendingCount > 0 && (
+                    <button
+                      onClick={sendAllPending}
+                      className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                    >
+                      <Send className="w-3.5 h-3.5" /> Send all pending ({pendingCount})
+                    </button>
+                  )}
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-border/50 mb-6">
+                  <table className="w-full border-collapse">
+                    <thead className="bg-secondary">
+                      <tr>
+                        <th className="p-3 w-8" />
+                        <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Name</th>
+                        <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</th>
                         <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Invite Status</th>
                         <th className="p-3" />
                       </tr>
@@ -806,46 +862,26 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                             </td>
                             <td className="p-3 text-sm text-foreground">
                               {entry.first_name} {entry.last_name}
-                              {entry.missing_from_sheet && (
-                                <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
-                                  <AlertTriangle className="w-2.5 h-2.5" /> Not in sheet
-                                </span>
-                              )}
                             </td>
                             <td className="p-3 text-sm text-muted-foreground break-all">{entry.email}</td>
-                            <td className="p-3 text-sm text-muted-foreground break-all">{entry.manager_email}</td>
                             <td className="p-3 text-sm text-muted-foreground whitespace-nowrap">
                               {entry.invited_at ? `Invited ${formatDate(entry.invited_at)}` : "Not invited"}
                             </td>
                             <td className="p-3">
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  onClick={() => sendInvite(entry)}
-                                  disabled={state === "sending"}
-                                  title={entry.invited_at ? "Resend invite" : "Send invite"}
-                                  className="flex items-center justify-center h-8 w-8 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
-                                >
-                                  {state === "sending" ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  ) : state === "sent" ? (
-                                    <Check className="w-3.5 h-3.5 text-primary" />
-                                  ) : (
-                                    <Send className="w-3.5 h-3.5" />
-                                  )}
-                                </button>
-                                <button
-                                  onClick={() => handleRemove(entry)}
-                                  disabled={removingId === entry.id}
-                                  title="Remove from roster"
-                                  className="flex items-center justify-center h-8 w-8 shrink-0 text-muted-foreground border border-border/50 rounded-lg hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors disabled:opacity-50"
-                                >
-                                  {removingId === entry.id ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  )}
-                                </button>
-                              </div>
+                              <button
+                                onClick={() => sendInvite(entry)}
+                                disabled={state === "sending"}
+                                title={entry.invited_at ? "Resend invite" : "Send invite"}
+                                className="flex items-center justify-center h-8 w-8 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
+                              >
+                                {state === "sending" ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : state === "sent" ? (
+                                  <Check className="w-3.5 h-3.5 text-primary" />
+                                ) : (
+                                  <Send className="w-3.5 h-3.5" />
+                                )}
+                              </button>
                             </td>
                           </tr>
                         );
@@ -858,7 +894,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
 
             {tab === "reports" && (
               <div>
-                <h2 className="font-heading text-sm font-semibold text-foreground mb-3">Reports</h2>
+                <h2 className="font-heading text-sm font-semibold text-foreground mb-3">NSS Reports</h2>
                 {roster.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No one on the roster yet.</p>
                 ) : (
