@@ -1,14 +1,16 @@
-// Executes the ACTUAL, unmodified NRS migration SQL (0022-0024) against a
+// Executes the ACTUAL, unmodified NRS migration SQL (0022-0027) against a
 // real embedded PostgreSQL engine (@electric-sql/pglite), mirroring
 // upsertNssResponse.pg.test.ts's approach for upsert_nss_response.
 //
 // What this DOES genuinely verify, on real Postgres: access-token
-// ownership enforcement, rating validation, that a question must belong
-// to the submission's own cluster, that re-answering a question updates
-// in place rather than duplicating, that a completed submission's
-// responses are immutable, that team_roster's on delete restrict actually
-// blocks removing a roster member with NRS history, and the anon/
-// authenticated execute grants.
+// ownership enforcement, rating validation, that a question must be part
+// of the submission's team's saved scenario selection (not just share its
+// cluster — 0027), that re-answering a question updates in place rather
+// than duplicating, that a completed submission's responses are
+// immutable, that team_roster's on delete restrict actually blocks
+// removing a roster member with NRS history, the anon/authenticated
+// execute grants, and nrs_team_cluster_scenarios' own invariants (exactly
+// 10 distinct ids, all belonging to the stated cluster — 0025).
 //
 // What this CANNOT verify: real cross-session concurrent-transaction
 // races — pglite is a single-connection embedded engine, and
@@ -120,7 +122,14 @@ beforeAll(async () => {
   `);
 
   const migrationsDir = new URL("../../../../supabase/migrations/", import.meta.url);
-  for (const file of ["0022_nrs_schema.sql", "0023_seed_nrs_core_stability.sql", "0024_nrs_upsert_response.sql"]) {
+  for (const file of [
+    "0022_nrs_schema.sql",
+    "0023_seed_nrs_core_stability.sql",
+    "0024_nrs_upsert_response.sql",
+    "0025_nrs_team_cluster_scenarios.sql",
+    "0026_nrs_scenario_bank_import.sql",
+    "0027_nrs_upsert_response_scoped_to_selection.sql",
+  ]) {
     const sql = readFileSync(new URL(file, migrationsDir), "utf8");
     await db.exec(sql);
   }
@@ -130,6 +139,14 @@ beforeAll(async () => {
     teamId,
     `test-team-${teamId}`,
   ]);
+  // Every existing test in this file answers questions 1-10 (Stability) —
+  // give this harness's one shared team a selection covering exactly
+  // those, same shape as 0026's own seeding for the real pilot teams.
+  await db.query(
+    `insert into public.nrs_team_cluster_scenarios (team_id, cluster_key, question_ids)
+     values ($1, 'Stability', array[1,2,3,4,5,6,7,8,9,10]::smallint[]);`,
+    [teamId],
+  );
 });
 
 afterAll(async () => {
@@ -154,15 +171,19 @@ describe("upsert_nrs_response — real Postgres execution via pglite", () => {
     await expect(callUpsert({ submissionId, token, questionId: 1, rating: 6 })).rejects.toThrow(/invalid rating/);
   });
 
-  it("rejects a question that doesn't belong to the submission's cluster", async () => {
+  it("rejects a question that isn't part of the team's saved selection", async () => {
     const rosterId = await createRoster();
     const { id: submissionId, token } = await createSubmission(rosterId);
 
-    // Question 1 belongs to the Stability cluster; feed it a question id
-    // that doesn't exist (no other cluster has seeded questions yet) to
-    // exercise the belongs-to-cluster check's rejection path.
+    // Question 11 is a real Stability scenario (0026 imports 30 per
+    // cluster) but isn't one of this harness's selected 10 (1-10) — the
+    // check must be against the selection, not mere cluster membership.
+    await expect(callUpsert({ submissionId, token, questionId: 11, rating: 3 })).rejects.toThrow(
+      /is not part of this team's selected scenarios/,
+    );
+    // A question id that doesn't exist at all is rejected the same way.
     await expect(callUpsert({ submissionId, token, questionId: 999, rating: 3 })).rejects.toThrow(
-      /does not belong to this submission's cluster/,
+      /is not part of this team's selected scenarios/,
     );
   });
 
@@ -237,5 +258,84 @@ describe("upsert_nrs_response — real Postgres execution via pglite", () => {
     // A roster member with NO NRS history is still removable as before.
     const untouchedRosterId = await createRoster();
     await expect(db.query(`delete from public.team_roster where id = $1;`, [untouchedRosterId])).resolves.toBeDefined();
+  });
+});
+
+describe("nrs_team_cluster_scenarios — real Postgres execution via pglite", () => {
+  async function freshTeam(): Promise<string> {
+    const id = randomUUID();
+    await db.query(`insert into public.teams (id, name, slug) values ($1, 'Another Team', $2);`, [
+      id,
+      `another-team-${id}`,
+    ]);
+    return id;
+  }
+
+  it("rejects fewer or more than 10 question ids", async () => {
+    const otherTeamId = await freshTeam();
+    // Caught by the trigger's own distinct-count check (it runs before
+    // the CHECK constraint ever gets evaluated) — the CHECK constraint
+    // still exists as a backstop for anything that bypasses triggers.
+    await expect(
+      db.query(
+        `insert into public.nrs_team_cluster_scenarios (team_id, cluster_key, question_ids)
+         values ($1, 'Stability', array[1,2,3]::smallint[]);`,
+        [otherTeamId],
+      ),
+    ).rejects.toThrow(/exactly 10 distinct values/);
+
+    await expect(
+      db.query(
+        `insert into public.nrs_team_cluster_scenarios (team_id, cluster_key, question_ids)
+         values ($1, 'Stability', array[1,2,3,4,5,6,7,8,9,10,11]::smallint[]);`,
+        [otherTeamId],
+      ),
+    ).rejects.toThrow(/exactly 10 distinct values/);
+  });
+
+  it("rejects duplicate ids within the array, even though the count is 10", async () => {
+    const otherTeamId = await freshTeam();
+    await expect(
+      db.query(
+        `insert into public.nrs_team_cluster_scenarios (team_id, cluster_key, question_ids)
+         values ($1, 'Stability', array[1,1,2,3,4,5,6,7,8,9]::smallint[]);`,
+        [otherTeamId],
+      ),
+    ).rejects.toThrow(/exactly 10 distinct values/);
+  });
+
+  it("rejects a question id that belongs to a different cluster than the one stated", async () => {
+    const otherTeamId = await freshTeam();
+    // Question 31 is a real id (Belonging, per 0026), not Stability.
+    await expect(
+      db.query(
+        `insert into public.nrs_team_cluster_scenarios (team_id, cluster_key, question_ids)
+         values ($1, 'Stability', array[1,2,3,4,5,6,7,8,9,31]::smallint[]);`,
+        [otherTeamId],
+      ),
+    ).rejects.toThrow(/must belong to cluster/);
+  });
+
+  it("accepts any valid combination of 10 distinct ids from the stated cluster, and upserts cleanly on conflict", async () => {
+    const otherTeamId = await freshTeam();
+    await db.query(
+      `insert into public.nrs_team_cluster_scenarios (team_id, cluster_key, question_ids)
+       values ($1, 'Belonging', array[31,32,33,34,35,36,37,38,39,40]::smallint[]);`,
+      [otherTeamId],
+    );
+
+    // Saving again (e.g. the admin changes their mind before locking)
+    // updates the same row rather than erroring on the unique constraint.
+    await db.query(
+      `insert into public.nrs_team_cluster_scenarios (team_id, cluster_key, question_ids)
+       values ($1, 'Belonging', array[41,42,43,44,45,46,47,48,49,50]::smallint[])
+       on conflict (team_id, cluster_key) do update set question_ids = excluded.question_ids;`,
+      [otherTeamId],
+    );
+
+    const r = await db.query(`select question_ids from public.nrs_team_cluster_scenarios where team_id = $1;`, [
+      otherTeamId,
+    ]);
+    expect((r.rows[0] as { question_ids: number[] }).question_ids).toEqual([41, 42, 43, 44, 45, 46, 47, 48, 49, 50]);
   });
 });
