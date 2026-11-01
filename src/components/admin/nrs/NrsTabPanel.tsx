@@ -6,6 +6,7 @@ import { Loader2, Send, Check, Bell, Eye } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { CLUSTERS, CLUSTER_LABELS, type ClusterKey } from "@/lib/nrs/clusters";
 import BulkSendConfirmDialog from "./BulkSendConfirmDialog";
+import NrsScenarioSelection from "./NrsScenarioSelection";
 
 function formatDate(ts: string) {
   return new Date(ts).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
@@ -50,6 +51,10 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
   const [actionError, setActionError] = useState<string | null>(null);
   const [bulkDialog, setBulkDialog] = useState<"send" | "remind" | null>(null);
   const [bulkSending, setBulkSending] = useState(false);
+  // Whether this cluster has a valid saved 10-scenario selection for this
+  // team — reported up by NrsScenarioSelection, which owns the actual
+  // fetch. Invitations can't be sent until this is true.
+  const [hasValidSelection, setHasValidSelection] = useState(false);
 
   // Which clusters actually have content — loaded once, independent of
   // which one is currently selected.
@@ -310,7 +315,8 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
             {notInvited.length > 0 && (
               <button
                 onClick={() => setBulkDialog("send")}
-                disabled={bulkSending}
+                disabled={bulkSending || !hasValidSelection}
+                title={hasValidSelection ? undefined : "Select and save 10 scenarios for this cluster first"}
                 className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
                 <Send className="w-3.5 h-3.5" /> Send to all ({notInvited.length})
@@ -328,6 +334,14 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
           </div>
         )}
       </div>
+
+      {isConfigured && (
+        <NrsScenarioSelection
+          teamId={teamId}
+          clusterKey={clusterKey}
+          onSelectionStatusChange={({ hasValidSelection }) => setHasValidSelection(hasValidSelection)}
+        />
+      )}
 
       {actionError && <p className="text-xs text-destructive mb-3">{actionError}</p>}
 
@@ -424,8 +438,8 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
                           {!sub ? (
                             <button
                               onClick={() => sendIndividual(row)}
-                              disabled={state === "sending"}
-                              title="Send invite"
+                              disabled={state === "sending" || !hasValidSelection}
+                              title={hasValidSelection ? "Send invite" : "Select and save 10 scenarios for this cluster first"}
                               className="flex items-center justify-center h-8 w-8 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
                             >
                               {state === "sending" ? (

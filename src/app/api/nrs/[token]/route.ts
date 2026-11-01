@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSubmissionByToken } from "@/lib/nrs/submission";
+import { getSelectedQuestionIds } from "@/lib/nrs/scenarioSelection";
 import { CLUSTER_LABELS } from "@/lib/nrs/clusters";
 
 // Unauthenticated on purpose — this is the link a participant clicks from
@@ -18,13 +19,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  const questionIds = await getSelectedQuestionIds(submission.roster.teamId, submission.clusterKey);
+  if (!questionIds) {
+    return NextResponse.json({ error: "No scenario selection saved for this team and cluster" }, { status: 404 });
+  }
+
   const admin = createAdminClient();
   const [{ data: questions, error: qError }, { data: responses, error: rError }] = await Promise.all([
-    admin
-      .from("nrs_questions")
-      .select("id, display_order, scenario_text")
-      .eq("cluster_key", submission.clusterKey)
-      .order("display_order"),
+    admin.from("nrs_questions").select("id, display_order, scenario_text").in("id", questionIds).order("display_order"),
     admin.from("nrs_responses").select("question_id, rating").eq("submission_id", submission.id),
   ]);
   if (qError) throw qError;

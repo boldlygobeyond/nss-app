@@ -40,6 +40,7 @@ interface EmployeeRow {
 interface QuestionRow {
   id: number;
   order: number;
+  needLabel: string;
   scenarioText: string;
 }
 
@@ -93,18 +94,32 @@ export default function NrsTeamSnapshot({ teamId }: { teamId: string }) {
     (async () => {
       setData(null);
       const supabase = createClient();
-      const [{ data: roster }, { data: submissions }, { data: questions }] = await Promise.all([
+      const [{ data: roster }, { data: submissions }, { data: selectionRow }] = await Promise.all([
         supabase.from("team_roster").select("id, first_name, last_name").eq("team_id", teamId).order("first_name"),
         supabase
           .from("nrs_submissions")
           .select("id, roster_id, status, resonance_score")
           .eq("cluster_key", clusterKey),
         supabase
-          .from("nrs_questions")
-          .select("id, display_order, scenario_text")
+          .from("nrs_team_cluster_scenarios")
+          .select("question_ids")
+          .eq("team_id", teamId)
           .eq("cluster_key", clusterKey)
-          .order("display_order"),
+          .maybeSingle(),
       ]);
+      if (cancelled) return;
+
+      // Only this team's own saved 10 scenarios — never "all scenarios in
+      // this cluster" (a cluster can hold up to 30; only the team's
+      // selection was actually presented to its participants).
+      const selectedIds: number[] = selectionRow?.question_ids ?? [];
+      const { data: questions } = selectedIds.length
+        ? await supabase
+            .from("nrs_questions")
+            .select("id, display_order, need_label, scenario_text")
+            .in("id", selectedIds)
+            .order("display_order")
+        : { data: [] };
       if (cancelled) return;
 
       const submissionByRosterId = new Map((submissions ?? []).map((s) => [s.roster_id, s]));
@@ -137,7 +152,12 @@ export default function NrsTeamSnapshot({ teamId }: { teamId: string }) {
 
       setData({
         employees,
-        questions: (questions ?? []).map((q) => ({ id: q.id, order: q.display_order, scenarioText: q.scenario_text })),
+        questions: (questions ?? []).map((q) => ({
+          id: q.id,
+          order: q.display_order,
+          needLabel: q.need_label,
+          scenarioText: q.scenario_text,
+        })),
         responses: responseMap,
       });
     })();
@@ -283,7 +303,9 @@ export default function NrsTeamSnapshot({ teamId }: { teamId: string }) {
                     {data.questions.map((q) => (
                       <tr key={q.id} className="border-t border-border/30">
                         <td className="p-3 text-sm text-foreground sticky left-0 bg-card">
-                          <span className="text-xs text-muted-foreground mr-1.5">{q.order}.</span>
+                          <span className="text-xs text-muted-foreground mr-1.5">
+                            {q.order}. <span className="font-medium">{q.needLabel}</span> ·
+                          </span>
                           {q.scenarioText}
                         </td>
                         {participatingEmployees.map((e) => {

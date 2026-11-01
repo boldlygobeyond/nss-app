@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createNrsSubmission } from "@/lib/nrs/submission";
 import { sendNrsInviteEmail } from "@/lib/nrs/nrsInviteEmail";
 import { logNrsSend } from "@/lib/nrs/sendLog";
+import { getSelectedQuestionIds } from "@/lib/nrs/scenarioSelection";
 import type { ClusterKey } from "@/lib/nss/clusters";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 
@@ -33,6 +34,14 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (teamError || !team) {
     return NextResponse.json({ error: "Team not found" }, { status: 404 });
+  }
+
+  const questionIds = await getSelectedQuestionIds(team.id, clusterKey as ClusterKey);
+  if (!questionIds) {
+    return NextResponse.json(
+      { error: "Select and save 10 scenarios for this cluster before sending invitations." },
+      { status: 400 },
+    );
   }
 
   // Re-confirms every requested id actually belongs to THIS team's

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ClusterKey } from "@/lib/nss/clusters";
+import { getSelectedQuestionIds } from "@/lib/nrs/scenarioSelection";
 
 export interface NrsSubmissionWithRoster {
   id: string;
@@ -112,19 +113,16 @@ export async function submitNrsAssessment(
 
   const { data: submission, error: subError } = await admin
     .from("nrs_submissions")
-    .select("id, cluster_key")
+    .select("id, cluster_key, team_roster(team_id)")
     .eq("id", submissionId)
     .eq("access_token", accessToken)
     .maybeSingle();
   if (subError || !submission) return null;
+  const roster = Array.isArray(submission.team_roster) ? submission.team_roster[0] : submission.team_roster;
+  if (!roster) return null;
 
-  const { data: questions, error: qError } = await admin
-    .from("nrs_questions")
-    .select("id")
-    .eq("cluster_key", submission.cluster_key);
-  if (qError) throw qError;
-  const questionIds = (questions ?? []).map((q) => q.id as number);
-  if (questionIds.length === 0) throw new Error("No scenarios configured for this cluster");
+  const questionIds = await getSelectedQuestionIds(roster.team_id, submission.cluster_key as ClusterKey);
+  if (!questionIds) throw new Error("No scenario selection saved for this team and cluster");
 
   const { data: responses, error: rError } = await admin
     .from("nrs_responses")
