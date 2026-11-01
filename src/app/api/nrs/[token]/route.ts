@@ -39,9 +39,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
     clusterName: CLUSTER_LABELS[submission.clusterKey],
     status: submission.status,
     resonanceScore: submission.resonanceScore,
-    questions: (questions ?? []).map((q) => ({
+    // Sequential 1-10 for display, not the question's raw display_order —
+    // that's now a position within the cluster's full 30-scenario bank
+    // (0026), never meant to be participant-visible. The query above
+    // already ordered by display_order, so this just numbers that order.
+    questions: (questions ?? []).map((q, i) => ({
       id: q.id,
-      order: q.display_order,
+      order: i + 1,
       scenarioText: q.scenario_text,
     })),
     savedResponses: (responses ?? []).map((r) => ({ questionId: r.question_id, rating: r.rating })),

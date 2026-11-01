@@ -152,9 +152,12 @@ export default function NrsTeamSnapshot({ teamId }: { teamId: string }) {
 
       setData({
         employees,
-        questions: (questions ?? []).map((q) => ({
+        // Sequential 1-10, matching what participants actually saw — not
+        // the raw display_order, which is a position within the cluster's
+        // full 30-scenario bank, not this team's 10.
+        questions: (questions ?? []).map((q, i) => ({
           id: q.id,
-          order: q.display_order,
+          order: i + 1,
           needLabel: q.need_label,
           scenarioText: q.scenario_text,
         })),

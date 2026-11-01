@@ -108,9 +108,12 @@ export default function NrsDrillDownPage({
           lastName: roster?.last_name ?? "",
           resonanceScore: submission.resonance_score,
           completedAt: submission.completed_at,
-          scenarios: (questions ?? []).map((q) => ({
+          // Sequential 1-10, matching what the participant actually saw —
+          // not the raw display_order, which is now a position within the
+          // cluster's full 30-scenario bank, not this team's 10.
+          scenarios: (questions ?? []).map((q, i) => ({
             questionId: q.id,
-            order: q.display_order,
+            order: i + 1,
             needLabel: q.need_label,
             scenarioText: q.scenario_text,
             rating: ratingByQuestion.get(q.id) ?? null,
