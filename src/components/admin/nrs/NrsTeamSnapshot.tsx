@@ -4,7 +4,10 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { CLUSTERS, CLUSTER_LABELS, type ClusterKey } from "@/lib/nrs/clusters";
-import { favorabilityToTeal } from "@/lib/nss/teamScores";
+import { favorabilityToTeal, heatmapLegendGradientCss } from "@/lib/nss/teamScores";
+
+const SCORE_LABEL_COLUMN = "6rem";
+const MIN_PERSON_COLUMN = "4.5rem";
 
 type NrsSubmissionStatus = "invited" | "in_progress" | "completed";
 
@@ -67,6 +70,10 @@ export default function NrsTeamSnapshot({ teamId }: { teamId: string }) {
   const [configuredClusters, setConfiguredClusters] = useState<Set<ClusterKey> | null>(null);
   const [clusterKey, setClusterKey] = useState<ClusterKey>("Stability");
   const [data, setData] = useState<SnapshotData | null>(null);
+  // Pure visual hover cue on the score heatmap — mirrors TeamNeedsHeatmap's
+  // own hover highlight (src/components/teams/TeamNeedsHeatmap.tsx), just
+  // keyed on person alone since there's only the one row here.
+  const [hoveredRosterId, setHoveredRosterId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -181,25 +188,74 @@ export default function NrsTeamSnapshot({ teamId }: { teamId: string }) {
         <div className="space-y-8">
           <div>
             <h2 className="font-heading text-sm font-semibold text-foreground mb-3">Scores by person</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {data.employees.map((e) => (
-                <div key={e.rosterId} className="bg-card border border-border/50 rounded-xl p-3.5">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    {e.status && <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_COLOR[e.status]}`} />}
-                    <p className="text-sm font-medium text-foreground truncate">{e.displayName}</p>
-                  </div>
-                  {e.score != null ? (
-                    <p
-                      className="text-lg font-semibold tabular-nums rounded-lg px-2.5 py-1.5 text-center"
-                      style={{ backgroundColor: ratingToColor(e.score), color: e.score >= 3.5 ? "#ffffff" : "#0f1729" }}
+            <div className="overflow-x-auto rounded-xl border border-border/50">
+              <div
+                role="table"
+                className="grid"
+                style={{
+                  gridTemplateColumns: `${SCORE_LABEL_COLUMN} repeat(${data.employees.length}, minmax(${MIN_PERSON_COLUMN}, 1fr))`,
+                }}
+                onMouseLeave={() => setHoveredRosterId(null)}
+              >
+                <div role="row" className="contents">
+                  <div role="columnheader" className="sticky left-0 z-10 bg-card" />
+                  {data.employees.map((e) => (
+                    <div
+                      key={e.rosterId}
+                      role="columnheader"
+                      className={`p-2 text-xs font-semibold text-center whitespace-nowrap truncate transition-colors ${
+                        hoveredRosterId === e.rosterId ? "text-foreground bg-secondary/60" : "text-muted-foreground"
+                      }`}
                     >
-                      {e.score.toFixed(1)}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">{e.status ? STATUS_LABEL[e.status] : "Not invited"}</p>
-                  )}
+                      {e.displayName}
+                    </div>
+                  ))}
                 </div>
-              ))}
+                <div role="row" className="contents">
+                  <div
+                    role="rowheader"
+                    className={`sticky left-0 z-10 bg-card p-2 pr-4 text-left text-xs font-medium whitespace-nowrap border-t border-border/30 flex items-center transition-colors ${
+                      hoveredRosterId ? "text-foreground bg-secondary/60" : "text-foreground"
+                    }`}
+                  >
+                    Score
+                  </div>
+                  {data.employees.map((e) => (
+                    <div
+                      key={e.rosterId}
+                      role="cell"
+                      className="p-1.5 border-t border-border/30 flex items-center justify-center"
+                    >
+                      {e.score != null ? (
+                        <div
+                          aria-label={`${e.displayName} — ${e.score.toFixed(1)}`}
+                          onMouseEnter={() => setHoveredRosterId(e.rosterId)}
+                          style={{ backgroundColor: ratingToColor(e.score), color: e.score >= 3.5 ? "#ffffff" : "#0f1729" }}
+                          className="w-full h-10 rounded-md border border-border/40 flex items-center justify-center text-sm font-semibold tabular-nums"
+                        >
+                          {e.score.toFixed(1)}
+                        </div>
+                      ) : (
+                        <div
+                          onMouseEnter={() => setHoveredRosterId(e.rosterId)}
+                          className="w-full h-10 rounded-md border border-dashed border-border/40 flex items-center justify-center gap-1"
+                          title={e.status ? STATUS_LABEL[e.status] : "Not invited"}
+                        >
+                          {e.status && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_COLOR[e.status]}`} />}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-2.5 max-w-md mx-auto">
+              <div className="h-2.5 rounded-full" style={{ background: heatmapLegendGradientCss() }} />
+              <div className="flex items-center justify-between mt-1.5 text-sm text-muted-foreground">
+                <span>Lower score</span>
+                <span>Higher score</span>
+              </div>
             </div>
           </div>
 
