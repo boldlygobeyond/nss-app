@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, Send, Check, Bell, Eye } from "lucide-react";
+import { ChevronDown, Loader2, Send, Check, Bell, Eye } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { CLUSTERS, CLUSTER_LABELS, type ClusterKey } from "@/lib/nrs/clusters";
 import BulkSendConfirmDialog from "./BulkSendConfirmDialog";
@@ -55,6 +55,14 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
   // team — reported up by NrsScenarioSelection, which owns the actual
   // fetch. Invitations can't be sent until this is true.
   const [hasValidSelection, setHasValidSelection] = useState(false);
+  // Two collapsible sections: Scenario Selection (setup) and the
+  // participant/invite table (sending). Whenever a valid selection
+  // exists — already saved from before, or just saved this session —
+  // Scenario Selection auto-collapses and the invite table auto-opens,
+  // so the admin lands on "send invites" instead of the setup they just
+  // finished. Both stay manually toggleable via their header either way.
+  const [scenarioCollapsed, setScenarioCollapsed] = useState(false);
+  const [inviteCollapsed, setInviteCollapsed] = useState(true);
 
   // Which clusters actually have content — loaded once, independent of
   // which one is currently selected.
@@ -119,6 +127,7 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId, clusterKey]);
+
 
   // Polled every few seconds so a participant's status dot moves from
   // invited -> in_progress -> completed on its own while they're actually
@@ -290,76 +299,107 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-        <div className="flex items-center gap-2">
-          <label htmlFor="nrs-cluster" className="text-xs font-medium text-muted-foreground">
-            Cluster
-          </label>
-          <select
-            id="nrs-cluster"
-            value={clusterKey}
-            onChange={(e) => setClusterKey(e.target.value as ClusterKey)}
-            className="h-9 px-3 text-sm border border-border/50 rounded-lg bg-card"
-          >
-            {CLUSTERS.map((c) => (
-              <option key={c} value={c}>
-                {CLUSTER_LABELS[c]}
-                {configuredClusters && !configuredClusters.has(c) ? " (not yet configured)" : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {isConfigured && rows && (
-          <div className="flex items-center gap-2">
-            {notInvited.length > 0 && (
-              <button
-                onClick={() => setBulkDialog("send")}
-                disabled={bulkSending || !hasValidSelection}
-                title={hasValidSelection ? undefined : "Select and save 10 scenarios for this cluster first"}
-                className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-              >
-                <Send className="w-3.5 h-3.5" /> Send to all ({notInvited.length})
-              </button>
-            )}
-            {incomplete.length > 0 && (
-              <button
-                onClick={() => setBulkDialog("remind")}
-                disabled={bulkSending}
-                className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
-              >
-                <Bell className="w-3.5 h-3.5" /> Remind all incomplete ({incomplete.length})
-              </button>
-            )}
-          </div>
-        )}
+      <div className="flex items-center gap-2 mb-5">
+        <label htmlFor="nrs-cluster" className="text-xs font-medium text-muted-foreground">
+          Cluster
+        </label>
+        <select
+          id="nrs-cluster"
+          value={clusterKey}
+          onChange={(e) => {
+            // Reset to the default collapse state on every cluster
+            // switch — NrsScenarioSelection's own status report
+            // immediately corrects this to "collapsed + invite open" if
+            // the new cluster already has a valid selection.
+            setClusterKey(e.target.value as ClusterKey);
+            setScenarioCollapsed(false);
+            setInviteCollapsed(true);
+          }}
+          className="h-9 px-3 text-sm border border-border/50 rounded-lg bg-card"
+        >
+          {CLUSTERS.map((c) => (
+            <option key={c} value={c}>
+              {CLUSTER_LABELS[c]}
+              {configuredClusters && !configuredClusters.has(c) ? " (not yet configured)" : ""}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {isConfigured && (
-        <NrsScenarioSelection
-          teamId={teamId}
-          clusterKey={clusterKey}
-          onSelectionStatusChange={({ hasValidSelection }) => setHasValidSelection(hasValidSelection)}
-        />
-      )}
-
-      {actionError && <p className="text-xs text-destructive mb-3">{actionError}</p>}
-
-      {!isConfigured ? (
+      {!isConfigured && (
         <div className="bg-secondary/40 border border-dashed border-border rounded-xl p-8 text-center">
           <p className="text-sm text-muted-foreground">
             {CLUSTER_LABELS[clusterKey]} doesn&apos;t have any scenarios configured yet.
           </p>
         </div>
-      ) : !rows ? (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No one on the roster yet.</p>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-border/50 border border-border/50 rounded-xl overflow-hidden mb-6">
+      )}
+
+      {isConfigured && (
+        <NrsScenarioSelection
+          teamId={teamId}
+          clusterKey={clusterKey}
+          collapsed={scenarioCollapsed}
+          onToggleCollapsed={() => setScenarioCollapsed((c) => !c)}
+          onSelectionStatusChange={({ hasValidSelection: valid }) => {
+            setHasValidSelection(valid);
+            if (valid) {
+              setScenarioCollapsed(true);
+              setInviteCollapsed(false);
+            }
+          }}
+        />
+      )}
+
+      {isConfigured && (
+        <div className="bg-card border border-border/50 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+            <button
+              onClick={() => setInviteCollapsed((c) => !c)}
+              className="flex items-center gap-1.5 font-heading text-sm font-semibold text-foreground"
+            >
+              <ChevronDown
+                className={`w-4 h-4 text-muted-foreground transition-transform ${inviteCollapsed ? "-rotate-90" : ""}`}
+              />
+              Send Invites
+            </button>
+            {rows && (
+              <div className="flex items-center gap-2">
+                {notInvited.length > 0 && (
+                  <button
+                    onClick={() => setBulkDialog("send")}
+                    disabled={bulkSending || !hasValidSelection}
+                    title={hasValidSelection ? undefined : "Select and save 10 scenarios for this cluster first"}
+                    className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5" /> Send to all ({notInvited.length})
+                  </button>
+                )}
+                {incomplete.length > 0 && (
+                  <button
+                    onClick={() => setBulkDialog("remind")}
+                    disabled={bulkSending}
+                    className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
+                  >
+                    <Bell className="w-3.5 h-3.5" /> Remind all incomplete ({incomplete.length})
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {!inviteCollapsed && (
+            <div className="mt-4">
+              {actionError && <p className="text-xs text-destructive mb-3">{actionError}</p>}
+
+              {!rows ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : rows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No one on the roster yet.</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-border/50 border border-border/50 rounded-xl overflow-hidden mb-6">
             <div className="bg-card p-4">
               <p className="text-2xl font-semibold text-foreground tabular-nums">{total}</p>
               <p className="text-xs text-muted-foreground mt-1">total participants</p>
@@ -493,7 +533,11 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
               </tbody>
             </table>
           </div>
-        </>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       <BulkSendConfirmDialog
