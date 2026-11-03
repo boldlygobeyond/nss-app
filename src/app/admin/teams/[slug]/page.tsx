@@ -58,7 +58,7 @@ interface ReportEntry {
 }
 
 type NssStatus = "not_started" | "in_progress" | "complete";
-type ReportsSortKey = "manager" | "name" | "status" | "completed";
+type ReportsSortKey = "manager" | "name" | "completed";
 const NSS_STATUS_RANK: Record<string, number> = { in_progress: 1, completed: 2, report_generated: 2 };
 const NSS_STATUS_LABEL: Record<NssStatus, string> = {
   not_started: "Not started",
@@ -137,10 +137,9 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
   }, [reports]);
 
   const [reportsSearch, setReportsSearch] = useState("");
-  const [reportsStatusFilter, setReportsStatusFilter] = useState<"all" | NssStatus>("all");
   const [reportsSort, setReportsSort] = useState<{ key: ReportsSortKey; dir: "asc" | "desc" }>({
-    key: "completed",
-    dir: "desc",
+    key: "name",
+    dir: "asc",
   });
 
   const loadRoster = async (teamId: string) => {
@@ -465,12 +464,9 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     });
 
     const q = reportsSearch.trim().toLowerCase();
-    const filtered = rows.filter((r) => {
-      if (reportsStatusFilter !== "all" && r.status !== reportsStatusFilter) return false;
-      if (!q) return true;
-      const haystack = `${r.fullName} ${r.entry.email} ${r.entry.manager_email}`.toLowerCase();
-      return haystack.includes(q);
-    });
+    const filtered = q
+      ? rows.filter((r) => `${r.fullName} ${r.entry.email} ${r.entry.manager_email}`.toLowerCase().includes(q))
+      : rows;
 
     // Ties on the primary key always fall back to name, alpha, regardless
     // of the primary sort's direction — e.g. sorting by Manager with
@@ -485,8 +481,6 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
             return a.entry.manager_email.localeCompare(b.entry.manager_email);
           case "name":
             return a.fullName.localeCompare(b.fullName);
-          case "status":
-            return NSS_STATUS_LABEL[a.status].localeCompare(NSS_STATUS_LABEL[b.status]);
           case "completed":
             return (a.report?.completedAt ?? "").localeCompare(b.report?.completedAt ?? "");
         }
@@ -495,7 +489,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
       return a.fullName.localeCompare(b.fullName);
     });
     return sorted;
-  }, [roster, reportsByEmail, nssStatusByEmail, profiles, reportsSearch, reportsStatusFilter, reportsSort]);
+  }, [roster, reportsByEmail, nssStatusByEmail, profiles, reportsSearch, reportsSort]);
 
   const toggleReportsSort = (key: ReportsSortKey) => {
     setReportsSort((prev) => (prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
@@ -701,43 +695,26 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                   <p className="text-sm text-muted-foreground">No one on the roster yet.</p>
                 ) : (
                   <>
-                    <div className="flex items-center gap-3 mb-4 flex-wrap">
-                      <input
-                        type="text"
-                        value={reportsSearch}
-                        onChange={(e) => setReportsSearch(e.target.value)}
-                        placeholder="Search by name, email, or manager..."
-                        className="flex-1 min-w-[220px] bg-card border border-border/50 rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
-                      />
-                      <div className="flex items-center gap-1 bg-card border border-border/50 rounded-lg p-1">
-                        {(["all", "not_started", "in_progress", "complete"] as const).map((v) => (
-                          <button
-                            key={v}
-                            onClick={() => setReportsStatusFilter(v)}
-                            className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
-                              reportsStatusFilter === v
-                                ? "bg-primary text-primary-foreground"
-                                : "text-muted-foreground hover:bg-secondary"
-                            }`}
-                          >
-                            {v === "all" ? "All" : NSS_STATUS_LABEL[v]}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                    <input
+                      type="text"
+                      value={reportsSearch}
+                      onChange={(e) => setReportsSearch(e.target.value)}
+                      placeholder="Search by name, email, or manager..."
+                      className="w-full mb-4 bg-card border border-border/50 rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
+                    />
 
                     {reportRows.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No one matches your search or filter.</p>
+                      <p className="text-sm text-muted-foreground">No one matches your search.</p>
                     ) : (
                       <div className="overflow-x-auto rounded-xl border border-border/50">
                         <table className="w-full border-collapse">
                           <thead className="bg-secondary">
                             <tr>
+                              <th className="p-3 w-8" />
                               {(
                                 [
                                   ["manager", "Manager"],
                                   ["name", "Name"],
-                                  ["status", "Status"],
                                   ["completed", "Completed"],
                                 ] as const
                               ).map(([key, label]) => (
@@ -764,14 +741,11 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                           <tbody className="bg-card">
                             {reportRows.map(({ entry, report, status, fullName }) => (
                               <tr key={entry.id} className="border-b border-border/30 last:border-0">
+                                <td className="p-3">
+                                  <span title={NSS_STATUS_LABEL[status]} className={`block w-2.5 h-2.5 rounded-full ${NSS_STATUS_COLOR[status]}`} />
+                                </td>
                                 <td className="p-3 text-sm text-muted-foreground break-all">{entry.manager_email}</td>
                                 <td className="p-3 text-sm text-foreground whitespace-nowrap">{fullName}</td>
-                                <td className="p-3 text-sm text-muted-foreground whitespace-nowrap">
-                                  <span className="inline-flex items-center gap-1.5">
-                                    <span className={`w-2 h-2 rounded-full ${NSS_STATUS_COLOR[status]}`} />
-                                    {NSS_STATUS_LABEL[status]}
-                                  </span>
-                                </td>
                                 <td className="p-3 text-sm text-muted-foreground whitespace-nowrap">
                                   {report?.completedAt ? formatDate(report.completedAt) : "—"}
                                 </td>
