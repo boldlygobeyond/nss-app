@@ -25,6 +25,12 @@ export interface NssSubmission {
   email_opened_at: string | null;
   email_clicked_at: string | null;
   team: string | null;
+  // Set once, at the moment the respondent actually finishes (see
+  // finishSubmission below) — never touched again. updated_at bumps on
+  // every write to the row (PDF caching, Drive archival, download
+  // clicks, report regeneration), so it's never safe to use as "when
+  // they took the survey."
+  completed_at: string | null;
   updated_at: string;
 }
 
@@ -51,7 +57,7 @@ export async function listSubmissionsForUser(
     .select("*")
     .eq("user_id", userId)
     .in("status", ["completed", "report_generated"])
-    .order("updated_at", { ascending: false });
+    .order("completed_at", { ascending: false });
 
   if (error) throw error;
   return data as NssSubmission[];
@@ -126,6 +132,7 @@ export async function finishSubmission(
       top_needs: params.topNeeds,
       scores: params.scores,
       status: "completed",
+      completed_at: new Date().toISOString(),
     })
     .eq("id", submissionId);
 
@@ -270,7 +277,7 @@ export async function listTeamSubmissions(
     .select("*")
     .in("user_email", emails)
     .not("report_data", "is", null)
-    .order("updated_at", { ascending: false });
+    .order("completed_at", { ascending: false });
 
   if (error) throw error;
   return data as NssSubmission[];
@@ -283,7 +290,7 @@ export async function listAllSubmissions(supabase: SupabaseClient): Promise<NssS
     .from("nss_submissions")
     .select("*")
     .not("report_data", "is", null)
-    .order("updated_at", { ascending: false });
+    .order("completed_at", { ascending: false });
 
   if (error) throw error;
   return data as NssSubmission[];

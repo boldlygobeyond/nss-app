@@ -22,7 +22,9 @@ export async function GET(request: Request) {
   const admin = createAdminClient();
   const { data: submission, error } = await admin
     .from("nss_submissions")
-    .select("id, user_id, user_email, respondent_name, updated_at, pdf_download_token, pdf_email_downloaded_at, team")
+    .select(
+      "id, user_id, user_email, respondent_name, completed_at, updated_at, pdf_download_token, pdf_email_downloaded_at, team",
+    )
     .eq("id", submissionId)
     .maybeSingle();
 
@@ -65,7 +67,7 @@ export async function GET(request: Request) {
     profile?.first_name,
     profile?.last_name,
     submission.respondent_name as string,
-    submission.updated_at as string,
+    (submission.completed_at ?? submission.updated_at) as string,
   )}.pdf`;
   const asciiFallback = fileName.replace(/[^\x20-\x7E]/g, "_").replace(/"/g, "'");
 

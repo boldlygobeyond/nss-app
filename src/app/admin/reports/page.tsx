@@ -7,7 +7,6 @@ import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, listAllProfiles, type UserProfile } from "@/lib/nss/userProfiles";
 import { listAllSubmissions, type NssSubmission } from "@/lib/nss/api";
 import { buildFullName } from "@/lib/nss/reportFilename";
-import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import GlobalHeader from "@/components/GlobalHeader";
 
 function formatDate(ts: string) {
@@ -27,7 +26,6 @@ export default function AllUserReportsPage() {
   const [authorized, setAuthorized] = useState(false);
   const [submissions, setSubmissions] = useState<NssSubmission[]>([]);
   const [profiles, setProfiles] = useState<Record<string, UserProfile>>({});
-  const [completedAt, setCompletedAt] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [versionFilter, setVersionFilter] = useState<"all" | "v1" | "v2">("all");
   const [sourceFilter, setSourceFilter] = useState<"all" | "lead" | "team">("all");
@@ -47,30 +45,12 @@ export default function AllUserReportsPage() {
       }
 
       setAuthorized(true);
+      // nss_submissions.completed_at (set once, at actual completion —
+      // see finishSubmission in lib/nss/api.ts) is what listAllSubmissions
+      // already sorts by; no separate client-side computation needed.
       const [rows, allProfiles] = await Promise.all([listAllSubmissions(supabase), listAllProfiles(supabase)]);
       setSubmissions(rows);
       setProfiles(Object.fromEntries(allProfiles.map((p) => [p.id, p])));
-
-      // updated_at isn't trustworthy as "when they finished" — a DB
-      // trigger bumps it on every write to the row, including PDF
-      // caching, Drive archival, and download-link clicks that can
-      // happen days or weeks later. The timestamp of their last actual
-      // answer is the real completion moment and nothing touches it
-      // after the fact.
-      // .order("id") keeps .range() paging stable — without it, a
-      // concurrent write (e.g. someone mid-survey) can shift row order
-      // between page requests and cause a row to be double-fetched or
-      // dropped.
-      const allResponses = await fetchAllRows<{ submission_id: string; answered_at: string }>((from, to) =>
-        supabase.from("nss_responses").select("submission_id, answered_at").order("id").range(from, to),
-      );
-      const lastAnswered: Record<string, string> = {};
-      allResponses.forEach((r) => {
-        if (!lastAnswered[r.submission_id] || r.answered_at > lastAnswered[r.submission_id]) {
-          lastAnswered[r.submission_id] = r.answered_at;
-        }
-      });
-      setCompletedAt(lastAnswered);
 
       setLoading(false);
     };
@@ -97,11 +77,11 @@ export default function AllUserReportsPage() {
       (acc[key] ??= []).push(s);
       return acc;
     }, {});
-    const completedOf = (s: NssSubmission) => completedAt[s.id] ?? s.updated_at;
+    const completedOf = (s: NssSubmission) => s.completed_at ?? s.updated_at;
     return Object.entries(byKey)
       .map(([key, records]) => [key, [...records].sort((a, b) => (completedOf(b) > completedOf(a) ? 1 : -1))] as const)
       .sort(([, a], [, b]) => (completedOf(b[0]) > completedOf(a[0]) ? 1 : -1));
-  }, [submissions, profiles, search, versionFilter, sourceFilter, completedAt]);
+  }, [submissions, profiles, search, versionFilter, sourceFilter]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -209,7 +189,7 @@ export default function AllUserReportsPage() {
                               {bankVersion(s)}
                             </span>
                           </p>
-                          <p className="text-xs text-muted-foreground">{formatDate(completedAt[s.id] ?? s.updated_at)}</p>
+                          <p className="text-xs text-muted-foreground">{formatDate(s.completed_at ?? s.updated_at)}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">

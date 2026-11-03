@@ -42,7 +42,7 @@ export default function PrintClient({ id }: { id: string }) {
         profile?.first_name,
         profile?.last_name,
         submission.respondent_name,
-        submission.updated_at,
+        submission.completed_at ?? submission.updated_at,
       );
     };
     loadProfile();
@@ -80,7 +80,7 @@ export default function PrintClient({ id }: { id: string }) {
             <div className="flex items-baseline justify-between">
               <span className="text-lg md:text-xl font-semibold text-foreground">{fullName ?? submission.respondent_name}</span>
               <span className="text-muted-foreground text-base">
-                {new Date(submission.updated_at).toLocaleDateString("en-US", {
+                {new Date(submission.completed_at ?? submission.updated_at).toLocaleDateString("en-US", {
                   year: "numeric",
                   month: "long",
                   day: "numeric",

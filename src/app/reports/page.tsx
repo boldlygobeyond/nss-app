@@ -54,7 +54,7 @@ export default function ReportsPage() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-foreground">Needs Signal Survey Report</p>
-                    <p className="text-xs text-muted-foreground">{formatDate(s.updated_at)}</p>
+                    <p className="text-xs text-muted-foreground">{formatDate(s.completed_at ?? s.updated_at)}</p>
                   </div>
                 </div>
                 <Link href={`/reports/${s.id}`}>

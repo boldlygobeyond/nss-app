@@ -178,7 +178,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
             <div className="flex items-baseline justify-between mt-1 mb-4">
               <span className="text-lg md:text-xl font-semibold text-foreground">{fullName ?? submission.respondent_name}</span>
               <span className="text-muted-foreground text-base">
-                {new Date(submission.updated_at).toLocaleDateString("en-US", {
+                {new Date(submission.completed_at ?? submission.updated_at).toLocaleDateString("en-US", {
                   year: "numeric",
                   month: "long",
                   day: "numeric",

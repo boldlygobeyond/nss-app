@@ -44,7 +44,7 @@ export default function CoverClient({ id }: { id: string }) {
       <p className="text-xs font-bold tracking-[0.18em] text-muted-foreground uppercase mb-1">Prepared for</p>
       <p className="text-xl font-bold text-foreground mb-0.5">{fullName}</p>
       <p className="text-sm text-muted-foreground mb-4">
-        {new Date(submission.updated_at).toLocaleDateString("en-US", {
+        {new Date(submission.completed_at ?? submission.updated_at).toLocaleDateString("en-US", {
           year: "numeric",
           month: "long",
           day: "numeric",

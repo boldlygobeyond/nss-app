@@ -84,7 +84,7 @@ export async function GET(request: Request) {
       profile?.first_name,
       profile?.last_name,
       submission.respondent_name,
-      submission.updated_at,
+      submission.completed_at ?? submission.updated_at,
     )}.pdf`;
     const asciiFallback = fileName.replace(/[^\x20-\x7E]/g, "_").replace(/"/g, "'");
     return new NextResponse(new Uint8Array(pdfBuffer), {
