@@ -436,7 +436,6 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
                 <tr>
                   <th className="p-3 w-8" />
                   <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Name</th>
-                  <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</th>
                   <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">NRS Status</th>
                   <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Invited</th>
                   <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Last Reminder</th>
@@ -457,7 +456,6 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
                       <td className="p-3 text-sm text-foreground whitespace-nowrap">
                         {row.firstName} {row.lastName}
                       </td>
-                      <td className="p-3 text-sm text-muted-foreground break-all">{row.email}</td>
                       <td className="p-3 text-sm text-muted-foreground whitespace-nowrap">
                         {sub ? STATUS_LABEL[sub.status] : "Not invited"}
                       </td>

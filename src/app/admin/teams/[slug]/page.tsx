@@ -149,6 +149,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
       .from("team_roster")
       .select("id, first_name, last_name, email, manager_email, invited_at, missing_from_sheet")
       .eq("team_id", teamId)
+      .order("first_name")
       .order("last_name");
     setRoster(data ?? []);
   };
@@ -471,18 +472,27 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
       return haystack.includes(q);
     });
 
+    // Ties on the primary key always fall back to name, alpha, regardless
+    // of the primary sort's direction — e.g. sorting by Manager with
+    // everyone sharing one manager should still read as an alpha name
+    // list within that manager, not whatever order the rows happened to
+    // arrive in.
     const dir = reportsSort.dir === "asc" ? 1 : -1;
     const sorted = [...filtered].sort((a, b) => {
-      switch (reportsSort.key) {
-        case "manager":
-          return dir * a.entry.manager_email.localeCompare(b.entry.manager_email);
-        case "name":
-          return dir * a.fullName.localeCompare(b.fullName);
-        case "status":
-          return dir * NSS_STATUS_LABEL[a.status].localeCompare(NSS_STATUS_LABEL[b.status]);
-        case "completed":
-          return dir * (a.report?.completedAt ?? "").localeCompare(b.report?.completedAt ?? "");
-      }
+      const primary = (() => {
+        switch (reportsSort.key) {
+          case "manager":
+            return a.entry.manager_email.localeCompare(b.entry.manager_email);
+          case "name":
+            return a.fullName.localeCompare(b.fullName);
+          case "status":
+            return NSS_STATUS_LABEL[a.status].localeCompare(NSS_STATUS_LABEL[b.status]);
+          case "completed":
+            return (a.report?.completedAt ?? "").localeCompare(b.report?.completedAt ?? "");
+        }
+      })();
+      if (primary !== 0) return dir * primary;
+      return a.fullName.localeCompare(b.fullName);
     });
     return sorted;
   }, [roster, reportsByEmail, nssStatusByEmail, profiles, reportsSearch, reportsStatusFilter, reportsSort]);
@@ -590,18 +600,20 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                           <td className="p-3 text-sm text-muted-foreground break-all">{entry.email}</td>
                           <td className="p-3 text-sm text-muted-foreground break-all">{entry.manager_email}</td>
                           <td className="p-3">
-                            <button
-                              onClick={() => handleRemove(entry)}
-                              disabled={removingId === entry.id}
-                              title="Remove from roster"
-                              className="flex items-center justify-center h-8 w-8 shrink-0 text-muted-foreground border border-border/50 rounded-lg hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors disabled:opacity-50 ml-auto"
-                            >
-                              {removingId === entry.id ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-3.5 h-3.5" />
-                              )}
-                            </button>
+                            {entry.missing_from_sheet && (
+                              <button
+                                onClick={() => handleRemove(entry)}
+                                disabled={removingId === entry.id}
+                                title="Remove from roster — no longer on the sheet"
+                                className="flex items-center justify-center h-8 w-8 shrink-0 text-muted-foreground border border-border/50 rounded-lg hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors disabled:opacity-50 ml-auto"
+                              >
+                                {removingId === entry.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}
