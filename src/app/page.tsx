@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { Loader2, FileText, Users, Files, Settings, RefreshCw, BarChart3, UserPlus, type LucideIcon } from "lucide-react";
+import { Loader2, FileText, Users, Files, Settings, BarChart3, UserPlus, type LucideIcon } from "lucide-react";
 import { sendGAEvent } from "@next/third-parties/google";
 import { createClient } from "@/lib/supabase/client";
 import { listSubmissionsForUser } from "@/lib/nss/api";
@@ -108,7 +108,42 @@ function AdminHomescreen({
   isManagerRole: boolean;
   myReportId: string | null;
 }) {
-  const cards: { href: string; label: string; description: string; icon: LucideIcon }[] = [
+  type Card = { href: string; label: string; description: string; icon: LucideIcon };
+
+  // The admin tools — this is the part that gets crowded, so it's
+  // deliberately ordered most-used-first rather than alphabetically or by
+  // when each feature shipped: Team Portal (day-to-day team management)
+  // leads, then the less-frequent setup/reporting/diagnostic tools.
+  const primaryCards: (Card | false)[] = [
+    isAdmin && {
+      href: "/admin/teams",
+      label: "Team Portal",
+      description: "Load a pilot roster from a spreadsheet, invite them, and view their reports.",
+      icon: UserPlus,
+    },
+    isAdmin && {
+      href: "/admin/users",
+      label: "Team Setup",
+      description: "Manage roles and the reporting hierarchy.",
+      icon: Settings,
+    },
+    isAdmin && {
+      href: "/admin/reports",
+      label: "All User Reports",
+      description: "Every generated report across the company.",
+      icon: Files,
+    },
+    isAdmin && {
+      href: "/admin/question-stats",
+      label: "Question Stats",
+      description: "It-depends and skip counts for every question.",
+      icon: BarChart3,
+    },
+  ];
+
+  // Personal, not administrative — kept visually separate so it doesn't
+  // compete with the admin tools above for attention.
+  const secondaryCards: (Card | false)[] = [
     {
       href: myReportId ? `/reports/${myReportId}` : "/reports",
       label: "My Report",
@@ -121,57 +156,48 @@ function AdminHomescreen({
       description: "Reports from your direct and indirect team.",
       icon: Users,
     },
-    isAdmin && {
-      href: "/admin/reports",
-      label: "All User Reports",
-      description: "Every generated report across the company.",
-      icon: Files,
-    },
-    isAdmin && {
-      href: "/admin/users",
-      label: "Team Setup",
-      description: "Manage roles and the reporting hierarchy.",
-      icon: Settings,
-    },
-    isAdmin && {
-      href: "/survey",
-      label: "Retake the Survey",
-      description: "Start a new attempt, useful for testing changes.",
-      icon: RefreshCw,
-    },
-    isAdmin && {
-      href: "/admin/question-stats",
-      label: "Question Stats",
-      description: "It-depends and skip counts for every question.",
-      icon: BarChart3,
-    },
-    isAdmin && {
-      href: "/admin/teams",
-      label: "Teams",
-      description: "Load a pilot roster from a spreadsheet, invite them, and view their reports.",
-      icon: UserPlus,
-    },
-  ].filter((c): c is { href: string; label: string; description: string; icon: LucideIcon } => !!c);
+  ];
+
+  const isCard = (c: Card | false): c is Card => !!c;
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-12 w-full">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-        {isManagerRole && (
-          <h1 className="font-heading text-2xl font-bold text-foreground mb-6">Needs Signal Survey</h1>
+        {primaryCards.some(isCard) && (
+          <div className="grid sm:grid-cols-2 gap-4">
+            {primaryCards.filter(isCard).map((card) => (
+              <Link
+                key={card.href}
+                href={card.href}
+                className="bg-card border border-border/50 rounded-2xl p-6 flex flex-col gap-3 hover:border-primary/40 hover:shadow-md transition-all"
+              >
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <card.icon className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-heading font-semibold text-foreground">{card.label}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{card.description}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
         )}
+
+        {primaryCards.some(isCard) && <hr className="border-border/50 my-8" />}
+
         <div className="grid sm:grid-cols-2 gap-4">
-          {cards.map((card) => (
+          {secondaryCards.filter(isCard).map((card) => (
             <Link
               key={card.href}
               href={card.href}
-              className="bg-card border border-border/50 rounded-2xl p-6 flex flex-col gap-3 hover:border-primary/40 hover:shadow-md transition-all"
+              className="bg-card border border-border/50 rounded-xl p-4 flex items-center gap-3 hover:border-primary/40 hover:shadow-sm transition-all"
             >
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <card.icon className="w-5 h-5 text-primary" />
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <card.icon className="w-4 h-4 text-primary" />
               </div>
               <div>
-                <p className="font-heading font-semibold text-foreground">{card.label}</p>
-                <p className="text-sm text-muted-foreground mt-1">{card.description}</p>
+                <p className="font-heading text-sm font-semibold text-foreground">{card.label}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{card.description}</p>
               </div>
             </Link>
           ))}
