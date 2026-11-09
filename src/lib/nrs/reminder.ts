@@ -15,7 +15,11 @@ export type ReminderAttemptResult =
 // a genuine accidental double-click lands well inside that window; a
 // legitimate "remind again next week" is far outside it. Zero rows
 // claimed means skip, not send again.
-export async function claimAndSendReminder(submissionId: string, origin: string): Promise<ReminderAttemptResult> {
+export async function claimAndSendReminder(
+  submissionId: string,
+  origin: string,
+  sentByUserId: string,
+): Promise<ReminderAttemptResult> {
   const admin = createAdminClient();
   const cutoff = new Date(Date.now() - REMINDER_COOLDOWN_SECONDS * 1000).toISOString();
 
@@ -43,7 +47,7 @@ export async function claimAndSendReminder(submissionId: string, origin: string)
     logoUrl: `${origin}/logo/bgb-line-almond.png`,
     submissionId: claimed.id,
   });
-  await logNrsSend({ submissionId: claimed.id, emailType: "reminder", outcome: sendResult });
+  await logNrsSend({ submissionId: claimed.id, emailType: "reminder", outcome: sendResult, sentBy: sentByUserId });
 
   return { skipped: false, outcome: sendResult.outcome };
 }

@@ -16,6 +16,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "submissionId is required" }, { status: 400 });
   }
 
-  const result = await claimAndSendReminder(submissionId, origin);
+  const result = await claimAndSendReminder(submissionId, origin, admin.userId);
   return NextResponse.json(result);
 }

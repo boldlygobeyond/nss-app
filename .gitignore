@@ -46,3 +46,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local manual-test scratch output that holds a live session cookie —
+# narrowly scoped to this exact filename, not the whole .tmp-scripts/ dir
+.tmp-scripts/nrs-test-cookie.txt

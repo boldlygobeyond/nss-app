@@ -43,7 +43,7 @@ export async function POST(request: Request) {
 
   const results: { submissionId: string; skipped: boolean; outcome?: string; reason?: string }[] = [];
   for (const submission of eligible ?? []) {
-    const result = await claimAndSendReminder(submission.id, origin);
+    const result = await claimAndSendReminder(submission.id, origin, admin.userId);
     results.push(
       result.skipped
         ? { submissionId: submission.id, skipped: true, reason: result.reason }

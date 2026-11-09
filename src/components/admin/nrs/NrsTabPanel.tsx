@@ -1,10 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ChevronDown, Loader2, Send, Check, Bell, Eye } from "lucide-react";
+import { ChevronDown, Loader2, Send, Check, Bell, Eye, X, Mail } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { CLUSTERS, CLUSTER_LABELS, type ClusterKey } from "@/lib/nrs/clusters";
+import {
+  toRowResult,
+  summarizeResults,
+  describeBulkSummary,
+  latestInviteLogBySubmission,
+  inviteEmailStatusLabel,
+  type SendResultItem,
+  type InviteEmailStatus,
+} from "@/lib/nrs/sendOutcome";
 import BulkSendConfirmDialog from "./BulkSendConfirmDialog";
 import NrsScenarioSelection from "./NrsScenarioSelection";
 
@@ -13,7 +22,52 @@ function formatDate(ts: string) {
 }
 
 type NrsSubmissionStatus = "invited" | "in_progress" | "completed";
-type SendState = "idle" | "sending" | "sent" | "error";
+// Mirrors sendOutcome.ts's RowResult kinds plus the UI-only "idle"/"sending"
+// states — mocked and skipped are their own states, never folded into
+// "sent", so a dev-mode mock or a skipped repeat-click can never render
+// the same as a real live send.
+type SendState = "idle" | "sending" | "sent" | "mocked" | "skipped" | "error";
+
+// One icon per row action (send/resend/remind), each keyed by action so
+// clicking one never changes the icon shown on a different button for
+// the same person.
+type ActionKind = "send" | "resend" | "remind";
+
+function sendStateFromResult(result: ReturnType<typeof toRowResult>): SendState {
+  return result.kind === "failed" ? "error" : result.kind;
+}
+
+function SendStateIcon({ state, idleIcon }: { state: SendState; idleIcon: ReactNode }) {
+  switch (state) {
+    case "sending":
+      return <Loader2 className="w-3.5 h-3.5 animate-spin" />;
+    case "sent":
+      return <Check className="w-3.5 h-3.5 text-primary" />;
+    case "mocked":
+      return <Check className="w-3.5 h-3.5 text-muted-foreground" />;
+    case "skipped":
+      return <Check className="w-3.5 h-3.5 text-muted-foreground opacity-50" />;
+    case "error":
+      return <X className="w-3.5 h-3.5 text-destructive" />;
+    default:
+      return <>{idleIcon}</>;
+  }
+}
+
+function titleForState(state: SendState, idleTitle: string): string | undefined {
+  switch (state) {
+    case "mocked":
+      return "Mocked — dev mode, no real email was sent";
+    case "skipped":
+      return "Skipped";
+    case "error":
+      return "Failed — see the error above";
+    case "sent":
+      return "Sent";
+    default:
+      return idleTitle;
+  }
+}
 
 const STATUS_LABEL: Record<NrsSubmissionStatus, string> = {
   invited: "Invited",
@@ -33,6 +87,29 @@ interface NrsSubmissionInfo {
   lastReminderAt: string | null;
   completedAt: string | null;
   resonanceScore: number | null;
+  // Persistent, independent of the survey-progress status above — see
+  // sendOutcome.ts. Derived from nrs_send_log, not nrs_submissions.
+  inviteEmailStatus: InviteEmailStatus;
+  inviteEmailAt: string | null;
+  inviteEmailSentBy: string | null; // resolved display name, or null if unattributed/not sent
+}
+
+const INVITE_EMAIL_ICON_CLASS: Record<InviteEmailStatus, string> = {
+  sent: "text-primary",
+  failed: "text-destructive",
+  mocked: "text-muted-foreground",
+  not_sent: "text-muted-foreground opacity-30",
+};
+
+function inviteEmailTooltip(sub: {
+  inviteEmailStatus: InviteEmailStatus;
+  inviteEmailAt: string | null;
+  inviteEmailSentBy: string | null;
+}): string {
+  const base = inviteEmailStatusLabel(sub.inviteEmailStatus);
+  if (!sub.inviteEmailAt) return base;
+  const when = `on ${formatDate(sub.inviteEmailAt)}`;
+  return sub.inviteEmailSentBy ? `${base} — ${when}, by ${sub.inviteEmailSentBy}` : `${base} — ${when}`;
 }
 
 interface NrsRosterRow {
@@ -97,10 +174,51 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
       return;
     }
 
+    // One extra, tightly-scoped query — not one per row — for the
+    // persistent email-status beacon: every invitation-type send-log
+    // entry (initial invite and any resends both log under that same
+    // email_type) for just this cluster's already-loaded submissions.
+    // Reminder/results events are deliberately excluded by the
+    // email_type filter, per the roster beacon's scope. Skipped
+    // entirely when there are no submissions yet, rather than sending a
+    // query with an empty .in() filter.
+    const submissionIds = (submissions ?? []).map((s) => s.id);
+    let latestLog = new Map<string, { outcome: InviteEmailStatus; created_at: string; sent_by?: string | null }>();
+    let adminNameById = new Map<string, string>();
+    if (submissionIds.length > 0) {
+      const { data: sendLogs, error: logError } = await supabase
+        .from("nrs_send_log")
+        .select("submission_id, outcome, created_at, sent_by")
+        .eq("email_type", "invitation")
+        .in("submission_id", submissionIds);
+      // Non-fatal: the roster still loads correctly without this beacon
+      // if the log query itself fails — every submission just falls back
+      // to "not_sent" below rather than blocking the whole tab.
+      if (logError) console.error("[nrs-tab] failed to load invitation send log:", logError);
+      latestLog = latestInviteLogBySubmission(sendLogs ?? []);
+
+      // A second small, tightly-scoped query — only for the distinct
+      // admin ids actually referenced by this cluster's latest sends, not
+      // one lookup per row. Skipped entirely when nothing needs
+      // attributing (e.g. every send predates this, or none exist yet).
+      const adminIds = [...new Set([...latestLog.values()].map((l) => l.sent_by).filter((id): id is string => !!id))];
+      if (adminIds.length > 0) {
+        const { data: admins, error: adminsError } = await supabase
+          .from("user_profiles")
+          .select("id, first_name, last_name")
+          .in("id", adminIds);
+        if (adminsError) console.error("[nrs-tab] failed to load sender names:", adminsError);
+        adminNameById = new Map(
+          (admins ?? []).map((a) => [a.id, [a.first_name, a.last_name].filter(Boolean).join(" ") || "Unknown admin"]),
+        );
+      }
+    }
+
     const byRosterId = new Map((submissions ?? []).map((s) => [s.roster_id, s]));
     setRows(
       (roster ?? []).map((r) => {
         const s = byRosterId.get(r.id);
+        const log = s ? latestLog.get(s.id) : undefined;
         return {
           rosterId: r.id,
           firstName: r.first_name,
@@ -114,6 +232,9 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
                 lastReminderAt: s.last_reminder_at,
                 completedAt: s.completed_at,
                 resonanceScore: s.resonance_score,
+                inviteEmailStatus: log?.outcome ?? "not_sent",
+                inviteEmailAt: log?.created_at ?? null,
+                inviteEmailSentBy: log?.sent_by ? (adminNameById.get(log.sent_by) ?? "Unknown admin") : null,
               }
             : null,
         };
@@ -160,6 +281,18 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
                     lastReminderAt: s.last_reminder_at,
                     completedAt: s.completed_at,
                     resonanceScore: s.resonance_score,
+                    // Deliberately not re-queried here — the invitation
+                    // send log only ever changes as a direct result of an
+                    // admin action on this same page (send/resend), and
+                    // every such action already calls loadRows() right
+                    // after, which refreshes this for real. Re-querying
+                    // nrs_send_log (and the admin-name lookup) on every 5s
+                    // poll tick as well would be a per-poll database call
+                    // for data that, between an admin's own actions, never
+                    // changes. Carry the last known values forward instead.
+                    inviteEmailStatus: r.submission?.inviteEmailStatus ?? "not_sent",
+                    inviteEmailAt: r.submission?.inviteEmailAt ?? null,
+                    inviteEmailSentBy: r.submission?.inviteEmailSentBy ?? null,
                   }
                 : null,
             };
@@ -174,28 +307,50 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId, clusterKey]);
 
-  const setRowState = (rosterId: string, state: SendState) => {
-    setSendState((s) => ({ ...s, [rosterId]: state }));
-    if (state === "sent" || state === "error") {
-      setTimeout(() => setSendState((s) => ({ ...s, [rosterId]: "idle" })), 2000);
+  // Keyed by rosterId + which action (send/resend/remind), not just
+  // rosterId — a row can show two independent action buttons (resend and
+  // remind) at once, and clicking one must never change the icon shown
+  // on the other.
+  const rowKey = (rosterId: string, action: ActionKind) => `${rosterId}:${action}`;
+
+  const setRowState = (rosterId: string, action: ActionKind, state: SendState) => {
+    const key = rowKey(rosterId, action);
+    setSendState((s) => ({ ...s, [key]: state }));
+    if (state !== "idle" && state !== "sending") {
+      setTimeout(() => setSendState((s) => ({ ...s, [key]: "idle" })), 2500);
+    }
+  };
+
+  // Shared by all three single-recipient actions: turns the route's
+  // response into one honest RowResult (never defaulting to "sent" just
+  // because the HTTP call itself succeeded), reflects it in that one
+  // button's icon, and — for anything other than a routine dev-mode mock
+  // — surfaces the reason in the error banner too, since the icon alone
+  // is easy to miss during a batch of clicks.
+  const applySingleResult = (row: NrsRosterRow, action: ActionKind, item: SendResultItem | null | undefined) => {
+    const result = toRowResult(item);
+    setRowState(row.rosterId, action, sendStateFromResult(result));
+    if (result.kind === "failed") {
+      setActionError(`${row.firstName} ${row.lastName}: ${result.message || "Could not send"}`);
+    } else if (result.kind === "skipped" && result.message) {
+      setActionError(`${row.firstName} ${row.lastName}: ${result.message}`);
     }
   };
 
   const sendIndividual = async (row: NrsRosterRow) => {
     setActionError(null);
-    setRowState(row.rosterId, "sending");
+    setRowState(row.rosterId, "send", "sending");
     try {
       const res = await fetch("/api/nrs/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ teamSlug, clusterKey, rosterIds: [row.rosterId] }),
       });
-      const body = await res.json();
-      const outcome = body?.results?.[0]?.outcome;
-      setRowState(row.rosterId, res.ok && outcome !== "failed" ? "sent" : "error");
+      const body = await res.json().catch(() => null);
+      applySingleResult(row, "send", res.ok ? body?.results?.[0] : null);
       await loadRows();
     } catch {
-      setRowState(row.rosterId, "error");
+      applySingleResult(row, "send", null);
     }
   };
 
@@ -206,40 +361,36 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
     );
     if (!confirmed) return;
     setActionError(null);
-    setRowState(row.rosterId, "sending");
+    setRowState(row.rosterId, "resend", "sending");
     try {
       const res = await fetch("/api/nrs/resend-invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ submissionId: row.submission.id }),
       });
-      setRowState(row.rosterId, res.ok ? "sent" : "error");
+      const body = await res.json().catch(() => null);
+      applySingleResult(row, "resend", res.ok ? body : null);
       await loadRows();
     } catch {
-      setRowState(row.rosterId, "error");
+      applySingleResult(row, "resend", null);
     }
   };
 
   const remindOne = async (row: NrsRosterRow) => {
     if (!row.submission) return;
     setActionError(null);
-    setRowState(row.rosterId, "sending");
+    setRowState(row.rosterId, "remind", "sending");
     try {
       const res = await fetch("/api/nrs/remind", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ submissionId: row.submission.id }),
       });
-      const body = await res.json();
-      if (body?.skipped) {
-        setActionError(`${row.firstName} ${row.lastName}: ${body.reason}`);
-        setRowState(row.rosterId, "idle");
-      } else {
-        setRowState(row.rosterId, res.ok ? "sent" : "error");
-      }
+      const body = await res.json().catch(() => null);
+      applySingleResult(row, "remind", res.ok ? body : null);
       await loadRows();
     } catch {
-      setRowState(row.rosterId, "error");
+      applySingleResult(row, "remind", null);
     }
   };
 
@@ -259,8 +410,20 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
       if (!res.ok) {
         const body = await res.json().catch(() => ({}) as { error?: string });
         setActionError(body.error || "Could not send invitations");
+      } else {
+        const body = await res.json().catch(() => ({ results: [] }));
+        // A 200 here only means the request was valid, not that every
+        // (or any) email actually went out — summarize the real
+        // per-recipient outcomes rather than treating "res.ok" as "sent."
+        const summary = summarizeResults(body.results ?? []);
+        setActionError(describeBulkSummary(summary, "invitation"));
       }
       await loadRows();
+    } catch {
+      // fetch() itself threw (offline, DNS failure, etc.) rather than
+      // returning a non-ok response — same user-facing message either way,
+      // since from the admin's seat both just mean "nothing went out."
+      setActionError("Could not send invitations. Check your connection and try again.");
     } finally {
       setBulkSending(false);
     }
@@ -279,8 +442,14 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
       if (!res.ok) {
         const body = await res.json().catch(() => ({}) as { error?: string });
         setActionError(body.error || "Could not send reminders");
+      } else {
+        const body = await res.json().catch(() => ({ results: [] }));
+        const summary = summarizeResults(body.results ?? []);
+        setActionError(describeBulkSummary(summary, "reminder"));
       }
       await loadRows();
+    } catch {
+      setActionError("Could not send reminders. Check your connection and try again.");
     } finally {
       setBulkSending(false);
     }
@@ -446,12 +615,26 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
               </thead>
               <tbody className="bg-card">
                 {rows.map((row) => {
-                  const state = sendState[row.rosterId] ?? "idle";
+                  const sendState_ = sendState[rowKey(row.rosterId, "send")] ?? "idle";
+                  const resendState = sendState[rowKey(row.rosterId, "resend")] ?? "idle";
+                  const remindState = sendState[rowKey(row.rosterId, "remind")] ?? "idle";
                   const sub = row.submission;
                   return (
                     <tr key={row.rosterId} className="border-b border-border/30 last:border-0">
                       <td className="p-3">
-                        {sub && <span className={`block w-2.5 h-2.5 rounded-full ${STATUS_COLOR[sub.status]}`} />}
+                        {sub && (
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`block w-2.5 h-2.5 rounded-full ${STATUS_COLOR[sub.status]}`}
+                              title={STATUS_LABEL[sub.status]}
+                            />
+                            {/* Compact, persistent invitation-email indicator — independent
+                                of the survey-progress dot above. See sendOutcome.ts. */}
+                            <span title={inviteEmailTooltip(sub)} className="inline-flex">
+                              <Mail className={`w-3 h-3 ${INVITE_EMAIL_ICON_CLASS[sub.inviteEmailStatus]}`} />
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="p-3 text-sm text-foreground whitespace-nowrap">
                         {row.firstName} {row.lastName}
@@ -476,17 +659,15 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
                           {!sub ? (
                             <button
                               onClick={() => sendIndividual(row)}
-                              disabled={state === "sending" || !hasValidSelection}
-                              title={hasValidSelection ? "Send invite" : "Select and save 10 scenarios for this cluster first"}
+                              disabled={sendState_ === "sending" || !hasValidSelection}
+                              title={
+                                hasValidSelection
+                                  ? titleForState(sendState_, "Send invite")
+                                  : "Select and save 10 scenarios for this cluster first"
+                              }
                               className="flex items-center justify-center h-8 w-8 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
                             >
-                              {state === "sending" ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : state === "sent" ? (
-                                <Check className="w-3.5 h-3.5 text-primary" />
-                              ) : (
-                                <Send className="w-3.5 h-3.5" />
-                              )}
+                              <SendStateIcon state={sendState_} idleIcon={<Send className="w-3.5 h-3.5" />} />
                             </button>
                           ) : sub.status === "completed" ? (
                             <Link href={`/admin/teams/${teamSlug}/nrs/${clusterKey}/${sub.id}`}>
@@ -501,25 +682,19 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
                             <>
                               <button
                                 onClick={() => resendInvite(row)}
-                                disabled={state === "sending"}
-                                title="Resend invite"
+                                disabled={resendState === "sending"}
+                                title={titleForState(resendState, "Resend invite")}
                                 className="flex items-center justify-center h-8 w-8 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
                               >
-                                {state === "sending" ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : state === "sent" ? (
-                                  <Check className="w-3.5 h-3.5 text-primary" />
-                                ) : (
-                                  <Send className="w-3.5 h-3.5" />
-                                )}
+                                <SendStateIcon state={resendState} idleIcon={<Send className="w-3.5 h-3.5" />} />
                               </button>
                               <button
                                 onClick={() => remindOne(row)}
-                                disabled={state === "sending"}
-                                title="Send reminder"
+                                disabled={remindState === "sending"}
+                                title={titleForState(remindState, "Send reminder")}
                                 className="flex items-center justify-center h-8 w-8 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
                               >
-                                <Bell className="w-3.5 h-3.5" />
+                                <SendStateIcon state={remindState} idleIcon={<Bell className="w-3.5 h-3.5" />} />
                               </button>
                             </>
                           )}

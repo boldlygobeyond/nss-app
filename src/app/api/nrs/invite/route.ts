@@ -66,7 +66,7 @@ export async function POST(request: Request) {
       });
       const assessmentUrl = `${origin}/nrs/${accessToken}`;
       const sendResult = await sendNrsInviteEmail({ to: roster.email, assessmentUrl, logoUrl, submissionId });
-      await logNrsSend({ submissionId, emailType: "invitation", outcome: sendResult });
+      await logNrsSend({ submissionId, emailType: "invitation", outcome: sendResult, sentBy: admin.userId });
       results.push({ rosterId: roster.id, outcome: sendResult.outcome });
     } catch (error) {
       results.push({

@@ -79,7 +79,7 @@ export default function ManagerDashboardPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-4 shrink-0">
-                    <p className="text-xs text-muted-foreground">{formatDate(report.updated_at)}</p>
+                    <p className="text-xs text-muted-foreground">{formatDate(report.completed_at ?? report.updated_at)}</p>
                     <Link href={`/reports/${report.id}`}>
                       <button className="text-xs font-medium border border-border/50 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors">
                         View

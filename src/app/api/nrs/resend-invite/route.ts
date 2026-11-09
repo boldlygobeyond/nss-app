@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     logoUrl: `${origin}/logo/bgb-line-almond.png`,
     submissionId: submission.id,
   });
-  await logNrsSend({ submissionId: submission.id, emailType: "invitation", outcome: sendResult });
+  await logNrsSend({ submissionId: submission.id, emailType: "invitation", outcome: sendResult, sentBy: admin.userId });
 
   return NextResponse.json({ outcome: sendResult.outcome });
 }

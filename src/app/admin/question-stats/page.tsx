@@ -36,6 +36,11 @@ function pct(n: number, total: number): string {
   return `${Math.round((n / total) * 100)}%`;
 }
 
+function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: "asc" | "desc" }) {
+  if (col !== sortKey) return <ArrowUpDown className="w-3 h-3 opacity-30" />;
+  return sortDir === "desc" ? <ArrowDown className="w-3 h-3" /> : <ArrowUp className="w-3 h-3" />;
+}
+
 export default function QuestionStatsPage() {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
@@ -172,15 +177,6 @@ export default function QuestionStatsPage() {
     }
   };
 
-  const SortIcon = ({ col }: { col: SortKey }) =>
-    col !== sortKey ? (
-      <ArrowUpDown className="w-3 h-3 opacity-30" />
-    ) : sortDir === "desc" ? (
-      <ArrowDown className="w-3 h-3" />
-    ) : (
-      <ArrowUp className="w-3 h-3" />
-    );
-
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <GlobalHeader />
@@ -230,7 +226,7 @@ export default function QuestionStatsPage() {
                   <tr className="border-b border-border/50 text-left">
                     <th className="px-4 py-3 font-medium text-muted-foreground">
                       <button onClick={() => toggleSort("id")} className="inline-flex items-center gap-1 hover:text-foreground">
-                        # <SortIcon col="id" />
+                        # <SortIcon col="id" sortKey={sortKey} sortDir={sortDir} />
                       </button>
                     </th>
                     <th className="px-4 py-3 font-medium text-muted-foreground">Question</th>
@@ -239,7 +235,7 @@ export default function QuestionStatsPage() {
                         onClick={() => toggleSort("presented")}
                         className="inline-flex items-center gap-1 hover:text-foreground"
                       >
-                        Presented <SortIcon col="presented" />
+                        Presented <SortIcon col="presented" sortKey={sortKey} sortDir={sortDir} />
                       </button>
                     </th>
                     <th className="px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
@@ -247,7 +243,7 @@ export default function QuestionStatsPage() {
                         onClick={() => toggleSort("itDepends")}
                         className="inline-flex items-center gap-1 hover:text-foreground"
                       >
-                        It depends <SortIcon col="itDepends" />
+                        It depends <SortIcon col="itDepends" sortKey={sortKey} sortDir={sortDir} />
                       </button>
                     </th>
                     <th className="px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
@@ -255,7 +251,7 @@ export default function QuestionStatsPage() {
                         onClick={() => toggleSort("skipped")}
                         className="inline-flex items-center gap-1 hover:text-foreground"
                       >
-                        Skipped <SortIcon col="skipped" />
+                        Skipped <SortIcon col="skipped" sortKey={sortKey} sortDir={sortDir} />
                       </button>
                     </th>
                   </tr>
