@@ -743,19 +743,19 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                         return (
                           <tr key={entry.id} className="border-b border-border/30 last:border-0">
                             <td className="p-3">
-                              <div className="flex items-center gap-1.5">
-                                {entry.invited_at && (
+                              {entry.invited_at && (
+                                <div className="flex items-center gap-1.5">
                                   <span
                                     title={`NSS status: ${NSS_STATUS_LABEL[nssStatus]}`}
                                     className={`block w-2.5 h-2.5 rounded-full ${NSS_STATUS_COLOR[nssStatus]}`}
                                   />
-                                )}
-                                {/* Compact, persistent invite-email indicator — independent
-                                    of the survey-progress dot above. See sendOutcome.ts. */}
-                                <span title={inviteEmailTooltip(entry)} className="inline-flex">
-                                  <Mail className={`w-3 h-3 ${INVITE_EMAIL_ICON_CLASS[entry.inviteEmailStatus]}`} />
-                                </span>
-                              </div>
+                                  {/* Compact, persistent invite-email indicator — independent
+                                      of the survey-progress dot above. See sendOutcome.ts. */}
+                                  <span title={inviteEmailTooltip(entry)} className="inline-flex">
+                                    <Mail className={`w-3 h-3 ${INVITE_EMAIL_ICON_CLASS[entry.inviteEmailStatus]}`} />
+                                  </span>
+                                </div>
+                              )}
                             </td>
                             <td className="p-3 text-sm text-foreground">
                               {entry.first_name} {entry.last_name}
