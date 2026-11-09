@@ -1,3 +1,5 @@
+import { sendNssEmail, type NssSendOutcome } from "./emailSend";
+
 // Sends a pilot/team member their invite link. Same visual chrome as
 // respondentEmail.ts (logo, brand colors, Marc's sign-off) so it reads as
 // the same product, but different copy — this is "come take the survey,"
@@ -10,7 +12,7 @@ export async function sendTeamInviteEmail(params: {
   managerFirstName: string;
   inviteUrl: string;
   logoUrl: string;
-}): Promise<void> {
+}): Promise<NssSendOutcome> {
   const { to, firstName, managerFirstName, inviteUrl, logoUrl } = params;
 
   const html = `
@@ -72,24 +74,10 @@ export async function sendTeamInviteEmail(params: {
 </html>
 `.trim();
 
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: "Marc @ Boldly Go Beyond <first.contact@boldlygobeyond.com>",
-        to,
-        subject: "You're invited to the Needs Signal Survey 👋",
-        html,
-      }),
-    });
-    if (!res.ok) {
-      console.error("[team-invite-email] send failed:", res.status, await res.text());
-    }
-  } catch (error) {
-    console.error("[team-invite-email] send error:", error);
-  }
+  return sendNssEmail({
+    from: "Marc @ Boldly Go Beyond <first.contact@boldlygobeyond.com>",
+    to,
+    subject: "You're invited to the Needs Signal Survey 👋",
+    html,
+  });
 }

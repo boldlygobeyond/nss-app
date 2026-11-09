@@ -1,3 +1,5 @@
+import { sendNssEmail, type NssSendOutcome } from "./emailSend";
+
 // Team/pilot version of respondentEmail.ts's "your report is ready" email —
 // same visual chrome (logo, brand colors, Marc's sign-off), but without the
 // "now imagine your whole team" pitch and calendar-booking CTA at the
@@ -9,7 +11,7 @@ export async function sendTeamReportReadyEmail(params: {
   submissionId: string;
   downloadUrl: string;
   logoUrl: string;
-}): Promise<void> {
+}): Promise<NssSendOutcome> {
   const { to, firstName, submissionId, downloadUrl, logoUrl } = params;
 
   const html = `
@@ -70,25 +72,11 @@ export async function sendTeamReportReadyEmail(params: {
 </html>
 `.trim();
 
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: "Marc @ Boldly Go Beyond <first.contact@boldlygobeyond.com>",
-        to,
-        subject: "Your Needs Signal Report is ready 🚀",
-        html,
-        tags: [{ name: "submission_id", value: submissionId }],
-      }),
-    });
-    if (!res.ok) {
-      console.error("[team-report-ready-email] send failed:", res.status, await res.text());
-    }
-  } catch (error) {
-    console.error("[team-report-ready-email] send error:", error);
-  }
+  return sendNssEmail({
+    from: "Marc @ Boldly Go Beyond <first.contact@boldlygobeyond.com>",
+    to,
+    subject: "Your Needs Signal Report is ready 🚀",
+    html,
+    tag: { name: "submission_id", value: submissionId },
+  });
 }

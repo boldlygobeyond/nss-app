@@ -14,9 +14,17 @@ import {
   Trash2,
   ChevronDown,
   ExternalLink,
+  X,
+  Mail,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, listAllProfiles } from "@/lib/nss/userProfiles";
+import {
+  toTeamInviteRowResult,
+  latestTeamInviteLogByRoster,
+  inviteEmailStatusLabel,
+  type InviteEmailStatus,
+} from "@/lib/nss/sendOutcome";
 import { buildFullName } from "@/lib/nss/reportFilename";
 import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import { rosterRowsFromGrid } from "@/lib/nss/rosterCsv";
@@ -47,6 +55,29 @@ interface RosterEntry {
   manager_email: string;
   invited_at: string | null;
   missing_from_sheet: boolean;
+  // Persistent, independent of invited_at above — see sendOutcome.ts.
+  // Derived from nss_send_log, not team_roster.
+  inviteEmailStatus: InviteEmailStatus;
+  inviteEmailAt: string | null;
+  inviteEmailSentBy: string | null; // resolved display name, or null if unattributed/not sent
+}
+
+const INVITE_EMAIL_ICON_CLASS: Record<InviteEmailStatus, string> = {
+  sent: "text-primary",
+  failed: "text-destructive",
+  mocked: "text-muted-foreground",
+  not_sent: "text-muted-foreground opacity-30",
+};
+
+function inviteEmailTooltip(entry: {
+  inviteEmailStatus: InviteEmailStatus;
+  inviteEmailAt: string | null;
+  inviteEmailSentBy: string | null;
+}): string {
+  const base = inviteEmailStatusLabel(entry.inviteEmailStatus);
+  if (!entry.inviteEmailAt) return base;
+  const when = `on ${formatDate(entry.inviteEmailAt)}`;
+  return entry.inviteEmailSentBy ? `${base} — ${when}, by ${entry.inviteEmailSentBy}` : `${base} — ${when}`;
 }
 
 interface ReportEntry {
@@ -72,7 +103,9 @@ const NSS_STATUS_COLOR: Record<NssStatus, string> = {
 };
 
 type Tab = "roster" | "nssInvites" | "reports" | "snapshot" | "nrs" | "nrsSnapshot";
-type SendState = "idle" | "sending" | "sent" | "error";
+// "mocked" is its own state, never folded into "sent" — a dev-mode mock
+// must never render the same as a real live send.
+type SendState = "idle" | "sending" | "sent" | "mocked" | "error";
 
 function formatDate(ts: string) {
   return new Date(ts).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
@@ -120,6 +153,11 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
   // below reads synchronously, not something the UI renders from (that's
   // snapshotScores === null), so it doesn't need to trigger a re-render.
   const snapshotLoadingRef = useRef(false);
+  // Both start collapsed — this tab is used to walk a live team meeting
+  // through one report at a time, not to dump both visualizations on
+  // screen at once.
+  const [heatmapCollapsed, setHeatmapCollapsed] = useState(true);
+  const [spectrumCollapsed, setSpectrumCollapsed] = useState(true);
 
   const [sendState, setSendState] = useState<Record<string, SendState>>({});
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -150,7 +188,55 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
       .eq("team_id", teamId)
       .order("first_name")
       .order("last_name");
-    setRoster(data ?? []);
+    const rosterRows = data ?? [];
+
+    // One extra, tightly-scoped query — not one per row — for the
+    // persistent email-status beacon: every team_invite-type send-log
+    // entry (initial invite and any resends both log under that same
+    // email_type) for just this team's roster. Skipped entirely when the
+    // roster is empty, rather than sending a query with an empty .in().
+    const rosterIds = rosterRows.map((r) => r.id);
+    let latestLog = new Map<string, { outcome: InviteEmailStatus; created_at: string; sent_by?: string | null }>();
+    let adminNameById = new Map<string, string>();
+    if (rosterIds.length > 0) {
+      const { data: sendLogs, error: logError } = await supabase
+        .from("nss_send_log")
+        .select("roster_id, outcome, created_at, sent_by")
+        .eq("email_type", "team_invite")
+        .in("roster_id", rosterIds);
+      // Non-fatal: the roster still loads correctly without this beacon
+      // if the log query itself fails — every entry just falls back to
+      // "not_sent" below rather than blocking the whole tab.
+      if (logError) console.error("[nss-invites] failed to load invite send log:", logError);
+      latestLog = latestTeamInviteLogByRoster(sendLogs ?? []);
+
+      // A second small, tightly-scoped query — only for the distinct
+      // admin ids actually referenced by this team's latest sends, not
+      // one lookup per row.
+      const adminIds = [...new Set([...latestLog.values()].map((l) => l.sent_by).filter((id): id is string => !!id))];
+      if (adminIds.length > 0) {
+        const { data: admins, error: adminsError } = await supabase
+          .from("user_profiles")
+          .select("id, first_name, last_name")
+          .in("id", adminIds);
+        if (adminsError) console.error("[nss-invites] failed to load sender names:", adminsError);
+        adminNameById = new Map(
+          (admins ?? []).map((a) => [a.id, [a.first_name, a.last_name].filter(Boolean).join(" ") || "Unknown admin"]),
+        );
+      }
+    }
+
+    setRoster(
+      rosterRows.map((r) => {
+        const log = latestLog.get(r.id);
+        return {
+          ...r,
+          inviteEmailStatus: log?.outcome ?? "not_sent",
+          inviteEmailAt: log?.created_at ?? null,
+          inviteEmailSentBy: log?.sent_by ? (adminNameById.get(log.sent_by) ?? "Unknown admin") : null,
+        };
+      }),
+    );
   };
 
   // Shared by loadReports (full load) and pollNssStatus (the cheap
@@ -361,11 +447,19 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
         managerEmail: entry.manager_email,
       }),
     });
-    setSendState((s) => ({ ...s, [entry.id]: res.ok ? "sent" : "error" }));
-    if (res.ok && team) {
-      await loadRoster(team.id);
-      setTimeout(() => setSendState((s) => ({ ...s, [entry.id]: "idle" })), 2000);
-    }
+    const body = await res.json().catch(() => null);
+    // Reads the actual outcome field, not just res.ok — the route always
+    // returns 200 once past validation, regardless of whether Resend
+    // itself accepted the email, so "ok" alone can't tell sent from
+    // mocked from failed.
+    const result = toTeamInviteRowResult(res.ok, body);
+    const nextState: SendState = result.kind === "failed" ? "error" : result.kind;
+    setSendState((s) => ({ ...s, [entry.id]: nextState }));
+    // Reload regardless of outcome — a failed attempt still needs the
+    // roster (and its persistent email-status beacon) to reflect reality,
+    // not just a successful one.
+    if (team) await loadRoster(team.id);
+    setTimeout(() => setSendState((s) => ({ ...s, [entry.id]: "idle" })), 2500);
   };
 
   const sendAllPending = async () => {
@@ -649,12 +743,19 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                         return (
                           <tr key={entry.id} className="border-b border-border/30 last:border-0">
                             <td className="p-3">
-                              {entry.invited_at && (
-                                <span
-                                  title={`NSS status: ${NSS_STATUS_LABEL[nssStatus]}`}
-                                  className={`block w-2.5 h-2.5 rounded-full ${NSS_STATUS_COLOR[nssStatus]}`}
-                                />
-                              )}
+                              <div className="flex items-center gap-1.5">
+                                {entry.invited_at && (
+                                  <span
+                                    title={`NSS status: ${NSS_STATUS_LABEL[nssStatus]}`}
+                                    className={`block w-2.5 h-2.5 rounded-full ${NSS_STATUS_COLOR[nssStatus]}`}
+                                  />
+                                )}
+                                {/* Compact, persistent invite-email indicator — independent
+                                    of the survey-progress dot above. See sendOutcome.ts. */}
+                                <span title={inviteEmailTooltip(entry)} className="inline-flex">
+                                  <Mail className={`w-3 h-3 ${INVITE_EMAIL_ICON_CLASS[entry.inviteEmailStatus]}`} />
+                                </span>
+                              </div>
                             </td>
                             <td className="p-3 text-sm text-foreground">
                               {entry.first_name} {entry.last_name}
@@ -674,6 +775,10 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                 ) : state === "sent" ? (
                                   <Check className="w-3.5 h-3.5 text-primary" />
+                                ) : state === "mocked" ? (
+                                  <Check className="w-3.5 h-3.5 text-muted-foreground" />
+                                ) : state === "error" ? (
+                                  <X className="w-3.5 h-3.5 text-destructive" />
                                 ) : (
                                   <Send className="w-3.5 h-3.5" />
                                 )}
@@ -794,21 +899,39 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                   (() => {
                     const rowOrder = computeTeamRowOrder(snapshotScores);
                     return (
-                      <div className="space-y-6">
-                        <div>
-                          <h2 className="font-heading text-sm font-semibold text-foreground mb-3">
+                      <div className="space-y-4">
+                        <div className="bg-card border border-border/50 rounded-2xl p-5">
+                          <button
+                            onClick={() => setHeatmapCollapsed((c) => !c)}
+                            className="flex items-center gap-1.5 font-heading text-sm font-semibold text-foreground"
+                          >
+                            <ChevronDown
+                              className={`w-4 h-4 text-muted-foreground transition-transform ${heatmapCollapsed ? "-rotate-90" : ""}`}
+                            />
                             Our Team&apos;s Needs Landscape
-                          </h2>
-                          <TeamNeedsHeatmap members={snapshotScores} rowOrder={rowOrder} />
+                          </button>
+                          {!heatmapCollapsed && (
+                            <div className="mt-4">
+                              <TeamNeedsHeatmap members={snapshotScores} rowOrder={rowOrder} />
+                            </div>
+                          )}
                         </div>
 
-                        <hr className="border-border/50" />
-
-                        <div>
-                          <h2 className="font-heading text-sm font-semibold text-foreground mb-3">
+                        <div className="bg-card border border-border/50 rounded-2xl p-5">
+                          <button
+                            onClick={() => setSpectrumCollapsed((c) => !c)}
+                            className="flex items-center gap-1.5 font-heading text-sm font-semibold text-foreground"
+                          >
+                            <ChevronDown
+                              className={`w-4 h-4 text-muted-foreground transition-transform ${spectrumCollapsed ? "-rotate-90" : ""}`}
+                            />
                             Our Team&apos;s Needs Profile
-                          </h2>
-                          <NeedsSpectrum members={snapshotScores} rowOrder={rowOrder} />
+                          </button>
+                          {!spectrumCollapsed && (
+                            <div className="mt-4">
+                              <NeedsSpectrum members={snapshotScores} rowOrder={rowOrder} />
+                            </div>
+                          )}
                         </div>
                       </div>
                     );

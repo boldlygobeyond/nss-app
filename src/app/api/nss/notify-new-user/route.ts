@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { notifyCrmLead, isNonLeadEmail } from "@/lib/nss/crm";
-import { sendAdminEmail } from "@/lib/nss/adminEmail";
+import { sendAdminEmail, ADMIN_RECIPIENT } from "@/lib/nss/adminEmail";
+import { logNssSend } from "@/lib/nss/sendLog";
 
 // Hit by a Supabase Database Webhook on INSERT into public.user_profiles —
 // i.e. exactly once per person, the moment they first sign in. Guarded by a
@@ -27,11 +28,17 @@ export async function POST(request: Request) {
     record.lead_source ? `Lead source: ${record.lead_source}` : null,
   ].filter(Boolean);
 
-  await Promise.allSettled([
-    // notifyCrmLead already skips internal/test-account emails itself.
+  const sendAdminNotification = async () => {
     // A pilot/team sign-up isn't a sales lead either — same reasoning as
     // the CRM skip, just for this admin notification instead.
-    ...(isNonLeadEmail(record.email) || record.team ? [] : [sendAdminEmail("New Diagnostics sign-up", lines.join("\n"))]),
+    if (isNonLeadEmail(record.email) || record.team) return;
+    const result = await sendAdminEmail("New Diagnostics sign-up", lines.join("\n"));
+    await logNssSend({ recipientEmail: ADMIN_RECIPIENT, emailType: "admin_notification", outcome: result });
+  };
+
+  await Promise.allSettled([
+    sendAdminNotification(),
+    // notifyCrmLead already skips internal/test-account emails itself.
     notifyCrmLead({
       firstName: record.first_name ?? "",
       lastName: record.last_name ?? "",

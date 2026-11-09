@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/nss/requireAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createTeamInvite } from "@/lib/nss/teamInvite";
 import { sendTeamInviteEmail } from "@/lib/nss/teamInviteEmail";
+import { logNssSend } from "@/lib/nss/sendLog";
 import { resolveManagerFirstName } from "@/lib/nss/teams";
 
 // Admin-only — sends a pilot/team member their invite. Separate from
@@ -43,29 +44,51 @@ export async function POST(request: Request) {
       (await resolveManagerFirstName(trimmedTeam, trimmedManagerEmail)) ||
       "Your manager";
 
+    // Looked up before sending so the send-log row can be tied to the
+    // right roster entry regardless of outcome — a roster row may not
+    // exist at all (the one-off invite form doesn't create one), which is
+    // fine; logNssSend's rosterId is optional for exactly this case.
+    const adminClient = createAdminClient();
+    const { data: teamRow } = await adminClient.from("teams").select("id").eq("slug", trimmedTeam).maybeSingle();
+    const { data: rosterRow } = teamRow
+      ? await adminClient
+          .from("team_roster")
+          .select("id")
+          .eq("team_id", teamRow.id)
+          .eq("email", invite.email)
+          .maybeSingle()
+      : { data: null };
+
     const inviteUrl = `${origin}/team-invite?token=${invite.hashedToken}`;
-    await sendTeamInviteEmail({
+    const sendResult = await sendTeamInviteEmail({
       to: invite.email,
       firstName: firstName.trim(),
       managerFirstName: resolvedManagerFirstName,
       inviteUrl,
       logoUrl: `${origin}/logo/bgb-line-almond.png`,
     });
+    await logNssSend({
+      recipientEmail: invite.email,
+      emailType: "team_invite",
+      outcome: sendResult,
+      rosterId: rosterRow?.id ?? null,
+      sentBy: admin.userId,
+    });
 
     // Best-effort — stamps the roster row so the workspace shows this
-    // person as invited. A roster row may not exist (the one-off invite
-    // form doesn't create one), so this is allowed to match nothing.
-    const adminClient = createAdminClient();
-    const { data: teamRow } = await adminClient.from("teams").select("id").eq("slug", trimmedTeam).maybeSingle();
-    if (teamRow) {
+    // person as invited, independent of whether the email itself
+    // succeeded (the roster's own "Invited" status has always meant "an
+    // invite was triggered," not "the email definitely arrived" — the
+    // new per-row beacon on the Invites tab is what actually answers
+    // that now).
+    if (rosterRow) {
       await adminClient
         .from("team_roster")
         .update({ invited_at: new Date().toISOString() })
-        .eq("team_id", teamRow.id)
-        .eq("email", invite.email);
+        .eq("id", rosterRow.id);
     }
 
-    return NextResponse.json({ sent: true, isNewAccount: invite.isNewAccount });
+    return NextResponse.json({ outcome: sendResult.outcome, isNewAccount: invite.isNewAccount });
   } catch (error) {
     console.error("[team-invite] failed:", error);
     return NextResponse.json({ error: "Could not send invite. Please try again." }, { status: 500 });

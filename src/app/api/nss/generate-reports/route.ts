@@ -6,9 +6,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { buildReportPrompt, buildReportPromptV2 } from "@/lib/nss/reportPrompts";
 import { archiveReportToDrive } from "@/lib/nss/googleDrive";
 import { notifyCrmLead, isNonLeadEmail } from "@/lib/nss/crm";
-import { sendAdminEmail } from "@/lib/nss/adminEmail";
+import { sendAdminEmail, ADMIN_RECIPIENT } from "@/lib/nss/adminEmail";
 import { sendRespondentReportEmail } from "@/lib/nss/respondentEmail";
 import { sendTeamReportReadyEmail } from "@/lib/nss/teamReportReadyEmail";
+import { logNssSend } from "@/lib/nss/sendLog";
 import { randomBytes } from "node:crypto";
 import { renderReportPdf } from "@/lib/nss/pdfRender";
 import { cacheReportPdf } from "@/lib/nss/pdfStorage";
@@ -221,6 +222,57 @@ export async function POST(request: Request) {
             })
             .eq("id", submissionId);
 
+          // Each email send is wrapped so its real outcome (sent/mocked/
+          // failed — never just "the promise didn't throw") gets logged to
+          // nss_send_log regardless of which branch fired, mirroring how
+          // every NRS send route already does this. Participant-triggered
+          // (this route runs off the respondent's own browser finishing
+          // their survey, not an admin click), so sentBy is left unset.
+          const sendAdminNotification = async () => {
+            // A pilot/team completion isn't a sales lead either — same
+            // reasoning as the CRM skip, just for this admin notification.
+            if (isNonLeadEmail(submission.user_email as string) || submission.team) return;
+            const result = await sendAdminEmail(
+              "Diagnostics report completed",
+              [
+                `${fullName} just completed their Needs Signal Survey.`,
+                "",
+                `Email: ${submission.user_email}`,
+                `Report: ${archived.pdfUrl}`,
+              ].join("\n"),
+            );
+            await logNssSend({
+              recipientEmail: ADMIN_RECIPIENT,
+              emailType: "admin_notification",
+              outcome: result,
+              submissionId,
+            });
+          };
+
+          const sendReportReadyEmail = async () => {
+            // The respondent's own "your report is ready" email stays on
+            // only the original internal/test-account check: a team
+            // member should still get it, branding and all.
+            if (isNonLeadEmail(submission.user_email as string)) return;
+            const to = submission.user_email as string;
+            const emailParams = {
+              to,
+              firstName: profile?.first_name || firstName,
+              submissionId,
+              downloadUrl: `${origin}/api/nss/report-pdf-download?id=${submissionId}&token=${pdfDownloadToken}`,
+              logoUrl: `${origin}/logo/bgb-line-almond.png`,
+            };
+            const result = submission.team
+              ? await sendTeamReportReadyEmail(emailParams)
+              : await sendRespondentReportEmail(emailParams);
+            await logNssSend({
+              recipientEmail: to,
+              emailType: submission.team ? "team_report_ready" : "respondent_report",
+              outcome: result,
+              submissionId,
+            });
+          };
+
           await Promise.allSettled([
             // notifyCrmLead already skips internal/test-account emails itself.
             notifyCrmLead({
@@ -230,43 +282,8 @@ export async function POST(request: Request) {
               reportUrl: archived.pdfUrl,
               team: submission.team as string | null,
             }),
-            // A pilot/team completion isn't a sales lead either — same
-            // reasoning as the CRM skip, just for this admin notification.
-            // The respondent's own "your report is ready" email below stays
-            // on only the original internal/test-account check: a team
-            // member should still get that email, branding and all.
-            ...(isNonLeadEmail(submission.user_email as string) || submission.team
-              ? []
-              : [
-                  sendAdminEmail(
-                    "Diagnostics report completed",
-                    [
-                      `${fullName} just completed their Needs Signal Survey.`,
-                      "",
-                      `Email: ${submission.user_email}`,
-                      `Report: ${archived.pdfUrl}`,
-                    ].join("\n"),
-                  ),
-                ]),
-            ...(isNonLeadEmail(submission.user_email as string)
-              ? []
-              : [
-                  submission.team
-                    ? sendTeamReportReadyEmail({
-                        to: submission.user_email as string,
-                        firstName: profile?.first_name || firstName,
-                        submissionId,
-                        downloadUrl: `${origin}/api/nss/report-pdf-download?id=${submissionId}&token=${pdfDownloadToken}`,
-                        logoUrl: `${origin}/logo/bgb-line-almond.png`,
-                      })
-                    : sendRespondentReportEmail({
-                        to: submission.user_email as string,
-                        firstName: profile?.first_name || firstName,
-                        submissionId,
-                        downloadUrl: `${origin}/api/nss/report-pdf-download?id=${submissionId}&token=${pdfDownloadToken}`,
-                        logoUrl: `${origin}/logo/bgb-line-almond.png`,
-                      }),
-                ]),
+            sendAdminNotification(),
+            sendReportReadyEmail(),
           ]);
         } catch (driveError) {
           // Best-effort — Drive archival is a backup copy, not required for the

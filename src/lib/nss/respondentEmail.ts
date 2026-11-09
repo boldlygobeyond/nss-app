@@ -1,3 +1,5 @@
+import { sendNssEmail, type NssSendOutcome } from "./emailSend";
+
 // Sends the respondent their completed Needs Signal Report via Resend: an
 // HTML email with the logo and a token-gated download link (see
 // report-pdf-download route) — deliberately NOT also attached. The link is
@@ -19,7 +21,7 @@ export async function sendRespondentReportEmail(params: {
   submissionId: string;
   downloadUrl: string;
   logoUrl: string;
-}): Promise<void> {
+}): Promise<NssSendOutcome> {
   const { to, firstName, submissionId, downloadUrl, logoUrl } = params;
 
   // Read at call time, not module load — a plain env var (not NEXT_PUBLIC_,
@@ -28,8 +30,11 @@ export async function sendRespondentReportEmail(params: {
   // relative to when the environment was populated.
   const CALENDAR_BOOKING_URL = process.env.CALENDAR_BOOKING_URL;
   if (!CALENDAR_BOOKING_URL) {
-    console.error("[respondent-email] CALENDAR_BOOKING_URL not set, skipping send");
-    return;
+    // Previously a silent skip (console.error only, caller never knew) —
+    // now a real, loggable failure, same as any other send problem.
+    const errorMessage = "CALENDAR_BOOKING_URL is not set";
+    console.error(`[respondent-email] ${errorMessage}, skipping send`);
+    return { outcome: "failed", errorMessage };
   }
 
   const html = `
@@ -119,25 +124,11 @@ export async function sendRespondentReportEmail(params: {
 </html>
 `.trim();
 
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: "Marc @ Boldly Go Beyond <first.contact@boldlygobeyond.com>",
-        to,
-        subject: "Your Needs Signal Report is ready 🚀",
-        html,
-        tags: [{ name: "submission_id", value: submissionId }],
-      }),
-    });
-    if (!res.ok) {
-      console.error("[respondent-email] send failed:", res.status, await res.text());
-    }
-  } catch (error) {
-    console.error("[respondent-email] send error:", error);
-  }
+  return sendNssEmail({
+    from: "Marc @ Boldly Go Beyond <first.contact@boldlygobeyond.com>",
+    to,
+    subject: "Your Needs Signal Report is ready 🚀",
+    html,
+    tag: { name: "submission_id", value: submissionId },
+  });
 }
