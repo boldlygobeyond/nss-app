@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, ShieldAlert, Users, Check, FileSpreadsheet } from "lucide-react";
+import { Loader2, ShieldAlert, Users, Check, FileSpreadsheet, Pencil, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile } from "@/lib/nss/userProfiles";
 import { rosterRowsFromGrid, type RosterRow } from "@/lib/nss/rosterCsv";
@@ -31,6 +31,11 @@ export default function TeamsPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [pickingFromDrive, setPickingFromDrive] = useState(false);
+
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [savingRename, setSavingRename] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
 
   const loadTeams = async () => {
     const supabase = createClient();
@@ -107,6 +112,47 @@ export default function TeamsPage() {
       setCreateError(err instanceof Error ? err.message : "Could not create the team.");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const startEditing = (team: TeamRow) => {
+    setEditingTeamId(team.id);
+    setEditingName(team.name);
+    setRenameError(null);
+  };
+
+  const cancelEditing = () => {
+    setEditingTeamId(null);
+    setEditingName("");
+    setRenameError(null);
+  };
+
+  const saveRename = async (team: TeamRow) => {
+    const trimmed = editingName.trim();
+    if (!trimmed) return;
+    if (trimmed === team.name) {
+      cancelEditing();
+      return;
+    }
+    setSavingRename(true);
+    setRenameError(null);
+    try {
+      const res = await fetch(`/api/nss/teams/${team.slug}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error || "Could not rename the team.");
+      }
+      await loadTeams();
+      setEditingTeamId(null);
+      setEditingName("");
+    } catch (err) {
+      setRenameError(err instanceof Error ? err.message : "Could not rename the team.");
+    } finally {
+      setSavingRename(false);
     }
   };
 
@@ -189,25 +235,88 @@ export default function TeamsPage() {
               <p className="text-sm text-muted-foreground">No teams yet.</p>
             ) : (
               <div className="space-y-2">
-                {teams.map((t) => (
-                  <Link
-                    key={t.id}
-                    href={`/admin/teams/${t.slug}`}
-                    className="flex items-center justify-between gap-4 bg-card border border-border/50 rounded-xl p-4 hover:border-primary/40 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                        <Users className="w-4 h-4 text-primary" />
+                {teams.map((t) =>
+                  editingTeamId === t.id ? (
+                    // Not a Link while editing — typing or clicking inside
+                    // the input must never trigger navigation to the
+                    // team's workspace.
+                    <div
+                      key={t.id}
+                      className="bg-card border border-primary/40 rounded-xl p-4"
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                            <Users className="w-4 h-4 text-primary" />
+                          </div>
+                          <input
+                            autoFocus
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") saveRename(t);
+                              if (e.key === "Escape") cancelEditing();
+                            }}
+                            disabled={savingRename}
+                            className="h-9 flex-1 min-w-0 rounded-lg bg-background border border-border/50 focus:border-primary focus:outline-none px-3 text-sm"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => saveRename(t)}
+                            disabled={savingRename || !editingName.trim()}
+                            title="Save"
+                            className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
+                          >
+                            {savingRename ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5 text-primary" />
+                            )}
+                          </button>
+                          <button
+                            onClick={cancelEditing}
+                            disabled={savingRename}
+                            title="Cancel"
+                            className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
+                          >
+                            <X className="w-3.5 h-3.5 text-muted-foreground" />
+                          </button>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{t.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {t.rosterCount} {t.rosterCount === 1 ? "person" : "people"}
-                        </p>
-                      </div>
+                      {renameError && <p className="text-xs text-destructive mt-2 ml-11">{renameError}</p>}
                     </div>
-                  </Link>
-                ))}
+                  ) : (
+                    <Link
+                      key={t.id}
+                      href={`/admin/teams/${t.slug}`}
+                      className="flex items-center justify-between gap-4 bg-card border border-border/50 rounded-xl p-4 hover:border-primary/40 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                          <Users className="w-4 h-4 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{t.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {t.rosterCount} {t.rosterCount === 1 ? "person" : "people"}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          startEditing(t);
+                        }}
+                        title="Rename team"
+                        className="flex items-center justify-center h-8 w-8 shrink-0 rounded-lg hover:bg-secondary transition-colors"
+                      >
+                        <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                      </button>
+                    </Link>
+                  ),
+                )}
               </div>
             )}
           </>

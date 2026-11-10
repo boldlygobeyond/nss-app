@@ -207,3 +207,16 @@ export async function resolveManagerFirstName(teamSlug: string, managerEmail: st
     .maybeSingle();
   return profileMatch?.first_name ?? null;
 }
+
+// Renames a team's display name only — the slug (used in its URL and
+// stamped onto nss_submissions.team as a plain text tag) is deliberately
+// never touched here. Changing the slug would silently detach every past
+// submission's team tag from the team it actually came from, since that
+// tag is a point-in-time copy, not a foreign key — see the "V2 Pilot
+// Team" cleanup for exactly that failure mode in reverse. teams.name has
+// no uniqueness constraint, so no collision check is needed.
+export async function renameTeam(teamId: string, name: string): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin.from("teams").update({ name: name.trim() }).eq("id", teamId);
+  if (error) throw error;
+}
