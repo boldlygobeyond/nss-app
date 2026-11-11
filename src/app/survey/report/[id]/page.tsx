@@ -91,8 +91,12 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
       <div className="sticky top-14 z-40 bg-primary text-primary-foreground shadow-md">
         <p className="max-w-3xl mx-auto px-6 py-3 text-center text-sm font-medium">
           {isReportReady
-            ? "Your report is ready! Scroll to the bottom of the page to access your results."
-            : STATUS_MESSAGES[statusIndex]}
+            ? isTeam
+              ? "Your Needs Signal Report is ready!"
+              : "Your report is ready! Scroll to the bottom of the page to access your results."
+            : isTeam && statusIndex === 0
+              ? "Your Needs Signal Report is generating..."
+              : STATUS_MESSAGES[statusIndex]}
         </p>
         <div className="h-1 bg-primary-foreground/20 overflow-hidden relative">
           {isReportReady ? (
@@ -107,10 +111,11 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
         </div>
       </div>
 
-      <div className="flex-1 max-w-3xl w-full mx-auto px-6 py-16">
+      <div className={`flex-1 max-w-3xl w-full mx-auto px-6 ${isTeam ? "py-8" : "py-16"}`}>
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
           <MissionControlPitch
             simple={isTeam}
+            done={isReportReady}
             headline="Your personal needs report is generating, but that's just the beginning."
             cta={
               <>
@@ -122,7 +127,7 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
                       isReportReady ? "animate-[pulse_0.6s_ease-in-out_2]" : ""
                     }`}
                   >
-                    {isReportReady ? "View My Report" : "Compiling your profile..."}
+                    {isTeam ? "View Your Report" : isReportReady ? "View My Report" : "Compiling your profile..."}
                   </button>
                   {!isTeam && (
                     <button
