@@ -29,11 +29,12 @@ export async function sendNssEmail(
     from: string;
     to: string;
     subject: string;
+    bcc?: string;
     tag?: { name: string; value: string };
   } & EmailBody,
 ): Promise<NssSendOutcome> {
   if (sendMode() === "mock") {
-    console.log("[nss-email-mock]", { to: payload.to, subject: payload.subject, tag: payload.tag });
+    console.log("[nss-email-mock]", { to: payload.to, subject: payload.subject, bcc: payload.bcc, tag: payload.tag });
     return { outcome: "mocked" };
   }
 
@@ -49,6 +50,7 @@ export async function sendNssEmail(
         to: payload.to,
         subject: payload.subject,
         ...("html" in payload && payload.html ? { html: payload.html } : { text: payload.text }),
+        ...(payload.bcc ? { bcc: payload.bcc } : {}),
         ...(payload.tag ? { tags: [payload.tag] } : {}),
       }),
     });

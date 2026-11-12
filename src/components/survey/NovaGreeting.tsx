@@ -103,9 +103,9 @@ export default function NovaGreeting({
           >
             <p className="text-muted-foreground text-sm uppercase tracking-widest mb-4 font-medium">Boldly Go Beyond</p>
             <h1 className="font-heading text-3xl md:text-4xl font-semibold mb-4 text-foreground leading-snug">
-              Hey there, I&apos;m Nova, Boldly Go Beyond&apos;s virtual intelligence.
+              Welcome to the <span className="whitespace-nowrap">Needs Signal Survey.</span>
             </h1>
-            <p className="text-muted-foreground text-lg mb-10">What shall I call you?</p>
+            <p className="text-muted-foreground text-lg mb-10">Before we get started, what shall I call you?</p>
             <form onSubmit={handleNameSubmit} className="flex gap-3 max-w-sm mx-auto">
               <input
                 value={name}

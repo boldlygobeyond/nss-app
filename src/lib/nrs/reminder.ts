@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendNrsReminderEmail } from "./nrsReminderEmail";
 import { logNrsSend } from "./sendLog";
+import type { ClusterKey } from "@/lib/nss/clusters";
 
 const REMINDER_COOLDOWN_SECONDS = 60;
 
@@ -29,7 +30,7 @@ export async function claimAndSendReminder(
     .eq("id", submissionId)
     .neq("status", "completed")
     .or(`last_reminder_at.is.null,last_reminder_at.lt.${cutoff}`)
-    .select("id, access_token, team_roster(first_name, email)")
+    .select("id, access_token, cluster_key, team_roster(first_name, email)")
     .maybeSingle();
   if (claimError || !claimed) {
     return { skipped: true, reason: "Already completed, or reminded within the last minute" };
@@ -43,6 +44,7 @@ export async function claimAndSendReminder(
   const sendResult = await sendNrsReminderEmail({
     to: roster.email,
     firstName: roster.first_name,
+    clusterKey: claimed.cluster_key as ClusterKey,
     assessmentUrl: `${origin}/nrs/${claimed.access_token}`,
     logoUrl: `${origin}/logo/bgb-line-almond.png`,
     submissionId: claimed.id,

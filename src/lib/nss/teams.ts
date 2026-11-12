@@ -180,32 +180,19 @@ export async function removeRosterEntry(rosterId: string): Promise<{ accountDele
   return { accountDeleted: true };
 }
 
-// Used so the invite-send step never has to ask for the manager's first
-// name separately: check whether the manager is themselves a row in this
-// team's roster first (most common case — the manager is on the same
-// sheet), then fall back to an existing account if they've logged in
-// before under a different team.
-export async function resolveManagerFirstName(teamSlug: string, managerEmail: string): Promise<string | null> {
+// "Attended See the Signals" (the workshop/training) is the launch
+// prerequisite checked by both the NSS and NRS invite routes before a
+// real send — see attended_see_the_signals_at on team_roster. Stored as
+// a timestamp (now() when checked, null when unchecked) rather than a
+// plain boolean so an admin can tell *when* someone attended, same as
+// invited_at/completed_at elsewhere on this table.
+export async function setRosterAttendance(rosterId: string, attended: boolean): Promise<void> {
   const admin = createAdminClient();
-  const lowerEmail = managerEmail.toLowerCase();
-
-  const { data: team } = await admin.from("teams").select("id").eq("slug", teamSlug).maybeSingle();
-  if (team) {
-    const { data: rosterMatch } = await admin
-      .from("team_roster")
-      .select("first_name")
-      .eq("team_id", team.id)
-      .eq("email", lowerEmail)
-      .maybeSingle();
-    if (rosterMatch?.first_name) return rosterMatch.first_name;
-  }
-
-  const { data: profileMatch } = await admin
-    .from("user_profiles")
-    .select("first_name")
-    .eq("email", lowerEmail)
-    .maybeSingle();
-  return profileMatch?.first_name ?? null;
+  const { error } = await admin
+    .from("team_roster")
+    .update({ attended_see_the_signals_at: attended ? new Date().toISOString() : null })
+    .eq("id", rosterId);
+  if (error) throw error;
 }
 
 // Renames a team's display name only — the slug (used in its URL and

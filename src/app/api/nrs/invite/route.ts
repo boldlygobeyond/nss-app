@@ -7,18 +7,25 @@ import { logNrsSend } from "@/lib/nrs/sendLog";
 import { getSelectedQuestionIds } from "@/lib/nrs/scenarioSelection";
 import type { ClusterKey } from "@/lib/nss/clusters";
 import { getPublicOrigin } from "@/lib/publicOrigin";
+import { getAdminTestEmail } from "@/lib/internalEmail";
+import { fakePreviewToken } from "@/lib/previewToken";
 
 // Admin-only. One route for both "Individual Send" (a single-element
 // rosterIds) and "Send to All" (every not-yet-invited id) — a single code
 // path for the duplicate-submission handling, synchronous/awaited so the
 // admin sees a real per-recipient success/failure outcome, same pattern
-// as /api/nss/team-invite.
+// as /api/nss/team-invite. `test: true` previews the first requested
+// roster member's real, personalized email without creating a real
+// submission or send-log row — the link is a fake, never-persisted token
+// so a tester can never act on that participant's behalf. The caller is
+// expected to pass a single rosterId for a test (bulk "sample test" picks
+// one representative person client-side); only the first is ever used.
 export async function POST(request: Request) {
   const admin = await requireAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: admin.status });
 
   const origin = getPublicOrigin(request);
-  const { teamSlug, clusterKey, rosterIds } = await request.json();
+  const { teamSlug, clusterKey, rosterIds, test } = await request.json();
   if (!teamSlug?.trim() || !clusterKey || !Array.isArray(rosterIds) || rosterIds.length === 0) {
     return NextResponse.json(
       { error: "teamSlug, clusterKey, and a non-empty rosterIds array are required" },
@@ -48,7 +55,7 @@ export async function POST(request: Request) {
   // roster — a requested id outside it is dropped, not attempted.
   const { data: rosterRows, error: rosterError } = await adminClient
     .from("team_roster")
-    .select("id, first_name, email")
+    .select("id, first_name, last_name, email, attended_see_the_signals_at")
     .eq("team_id", team.id)
     .in("id", rosterIds);
   if (rosterError) {
@@ -56,16 +63,46 @@ export async function POST(request: Request) {
   }
 
   const logoUrl = `${origin}/logo/bgb-line-almond.png`;
+
+  if (test === true) {
+    const roster = (rosterRows ?? [])[0];
+    if (!roster) return NextResponse.json({ error: "Not found on this team's roster" }, { status: 404 });
+    const sendResult = await sendNrsInviteEmail({
+      to: getAdminTestEmail(),
+      clusterKey: clusterKey as ClusterKey,
+      assessmentUrl: `${origin}/nrs/${fakePreviewToken()}`,
+      logoUrl,
+      submissionId: "test-preview",
+      test: true,
+      testParticipantLabel: `${roster.first_name} ${roster.last_name}`,
+    });
+    return NextResponse.json({ results: [{ rosterId: roster.id, outcome: sendResult.outcome }] });
+  }
+
   const results: { rosterId: string; outcome: string; error?: string }[] = [];
 
   for (const roster of rosterRows ?? []) {
+    if (!roster.attended_see_the_signals_at) {
+      results.push({
+        rosterId: roster.id,
+        outcome: "failed",
+        error: "Hasn't attended See the Signals yet — check them off on the Roster tab first",
+      });
+      continue;
+    }
     try {
       const { id: submissionId, accessToken } = await createNrsSubmission({
         rosterId: roster.id,
         clusterKey: clusterKey as ClusterKey,
       });
       const assessmentUrl = `${origin}/nrs/${accessToken}`;
-      const sendResult = await sendNrsInviteEmail({ to: roster.email, assessmentUrl, logoUrl, submissionId });
+      const sendResult = await sendNrsInviteEmail({
+        to: roster.email,
+        clusterKey: clusterKey as ClusterKey,
+        assessmentUrl,
+        logoUrl,
+        submissionId,
+      });
       await logNrsSend({ submissionId, emailType: "invitation", outcome: sendResult, sentBy: admin.userId });
       results.push({ rosterId: roster.id, outcome: sendResult.outcome });
     } catch (error) {

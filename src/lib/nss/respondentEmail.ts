@@ -21,8 +21,9 @@ export async function sendRespondentReportEmail(params: {
   submissionId: string;
   downloadUrl: string;
   logoUrl: string;
+  test?: boolean;
 }): Promise<NssSendOutcome> {
-  const { to, firstName, submissionId, downloadUrl, logoUrl } = params;
+  const { to, firstName, submissionId, downloadUrl, logoUrl, test } = params;
 
   // Read at call time, not module load — a plain env var (not NEXT_PUBLIC_,
   // server-only) so the booking link can change without a redeploy, and so
@@ -127,7 +128,7 @@ export async function sendRespondentReportEmail(params: {
   return sendNssEmail({
     from: "Marc @ Boldly Go Beyond <first.contact@boldlygobeyond.com>",
     to,
-    subject: "Your Needs Signal Report is ready 🚀",
+    subject: `${test ? "[TEST] " : ""}Your Needs Signal Report is ready 🚀`,
     html,
     tag: { name: "submission_id", value: submissionId },
   });

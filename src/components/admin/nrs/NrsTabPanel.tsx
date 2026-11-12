@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import Link from "next/link";
-import { ChevronDown, Loader2, Send, Check, Bell, Eye, X, Mail } from "lucide-react";
+import { ChevronDown, Loader2, Send, Check, Bell, X, Mail } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { CLUSTERS, CLUSTER_LABELS, type ClusterKey } from "@/lib/nrs/clusters";
 import {
@@ -16,6 +15,7 @@ import {
 } from "@/lib/nrs/sendOutcome";
 import BulkSendConfirmDialog from "./BulkSendConfirmDialog";
 import NrsScenarioSelection from "./NrsScenarioSelection";
+import SendActionMenu from "@/components/admin/SendActionMenu";
 
 function formatDate(ts: string) {
   return new Date(ts).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
@@ -117,6 +117,7 @@ interface NrsRosterRow {
   firstName: string;
   lastName: string;
   email: string;
+  attendedAt: string | null;
   submission: NrsSubmissionInfo | null;
 }
 
@@ -163,7 +164,11 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
     // selected cluster — so this tab always shows exactly the same
     // members as Roster, never a separate participant concept.
     const [{ data: roster, error: rosterError }, { data: submissions, error: subError }] = await Promise.all([
-      supabase.from("team_roster").select("id, first_name, last_name, email").eq("team_id", teamId).order("first_name"),
+      supabase
+        .from("team_roster")
+        .select("id, first_name, last_name, email, attended_see_the_signals_at")
+        .eq("team_id", teamId)
+        .order("first_name"),
       supabase
         .from("nrs_submissions")
         .select("id, roster_id, status, invited_at, last_reminder_at, completed_at, resonance_score")
@@ -224,6 +229,7 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
           firstName: r.first_name,
           lastName: r.last_name,
           email: r.email,
+          attendedAt: r.attended_see_the_signals_at,
           submission: s
             ? {
                 id: s.id,
@@ -394,8 +400,77 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
     }
   };
 
-  const notInvited = (rows ?? []).filter((r) => !r.submission);
+  // Test variants — preview this row's real, personalized email in the
+  // admin's own test inbox. Each route skips creating/mutating any real
+  // state (no submission, no roster/reminder stamp, no send-log row), so
+  // these never touch the table and loadRows() isn't needed after them.
+  const sendTestIndividual = async (row: NrsRosterRow) => {
+    setActionError(null);
+    setRowState(row.rosterId, "send", "sending");
+    try {
+      const res = await fetch("/api/nrs/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamSlug, clusterKey, rosterIds: [row.rosterId], test: true }),
+      });
+      const body = await res.json().catch(() => null);
+      applySingleResult(row, "send", res.ok ? body?.results?.[0] : null);
+    } catch {
+      applySingleResult(row, "send", null);
+    }
+  };
+
+  const sendTestResend = async (row: NrsRosterRow) => {
+    if (!row.submission) return;
+    setActionError(null);
+    setRowState(row.rosterId, "resend", "sending");
+    try {
+      const res = await fetch("/api/nrs/resend-invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submissionId: row.submission.id, test: true }),
+      });
+      const body = await res.json().catch(() => null);
+      applySingleResult(row, "resend", res.ok ? body : null);
+    } catch {
+      applySingleResult(row, "resend", null);
+    }
+  };
+
+  const sendTestRemind = async (row: NrsRosterRow) => {
+    if (!row.submission) return;
+    setActionError(null);
+    setRowState(row.rosterId, "remind", "sending");
+    try {
+      const res = await fetch("/api/nrs/remind", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submissionId: row.submission.id, test: true }),
+      });
+      const body = await res.json().catch(() => null);
+      applySingleResult(row, "remind", res.ok ? body : null);
+    } catch {
+      applySingleResult(row, "remind", null);
+    }
+  };
+
+  // Not-yet-invited AND cleared the launch prerequisite (attended See the
+  // Signals) — someone who hasn't attended is simply never counted as
+  // eligible, so a bulk send silently excludes them rather than
+  // attempting and failing per person. Reminders aren't re-gated here:
+  // reaching "invited, needs a reminder" already required passing this
+  // check once, at invite time.
+  const notInvited = (rows ?? []).filter((r) => !r.submission && r.attendedAt);
   const incomplete = (rows ?? []).filter((r) => r.submission && r.submission.status !== "completed");
+
+  // Bulk "sample test" actions pick one representative eligible person
+  // rather than test-sending to every one of them.
+  const sendSampleTestInvite = async () => {
+    if (notInvited[0]) await sendTestIndividual(notInvited[0]);
+  };
+  const sendSampleTestRemind = async () => {
+    if (incomplete[0]) await sendTestRemind(incomplete[0]);
+  };
 
   const confirmBulkSend = async () => {
     setBulkDialog(null);
@@ -534,23 +609,35 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
             {rows && (
               <div className="flex items-center gap-2">
                 {notInvited.length > 0 && (
-                  <button
-                    onClick={() => setBulkDialog("send")}
+                  <SendActionMenu
+                    icon={
+                      <>
+                        <Send className="w-3.5 h-3.5" /> Send to all ({notInvited.length})
+                      </>
+                    }
                     disabled={bulkSending || !hasValidSelection}
                     title={hasValidSelection ? undefined : "Select and save 10 scenarios for this cluster first"}
                     className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-                  >
-                    <Send className="w-3.5 h-3.5" /> Send to all ({notInvited.length})
-                  </button>
+                    testLabel="Send sample test to me"
+                    liveLabel={`Send to all (${notInvited.length})`}
+                    onSendTest={sendSampleTestInvite}
+                    onSendLive={() => setBulkDialog("send")}
+                  />
                 )}
                 {incomplete.length > 0 && (
-                  <button
-                    onClick={() => setBulkDialog("remind")}
+                  <SendActionMenu
+                    icon={
+                      <>
+                        <Bell className="w-3.5 h-3.5" /> Remind all incomplete ({incomplete.length})
+                      </>
+                    }
                     disabled={bulkSending}
                     className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
-                  >
-                    <Bell className="w-3.5 h-3.5" /> Remind all incomplete ({incomplete.length})
-                  </button>
+                    testLabel="Send sample test to me"
+                    liveLabel={`Remind all incomplete (${incomplete.length})`}
+                    onSendTest={sendSampleTestRemind}
+                    onSendLive={() => setBulkDialog("remind")}
+                  />
                 )}
               </div>
             )}
@@ -568,37 +655,6 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
                 <p className="text-sm text-muted-foreground">No one on the roster yet.</p>
               ) : (
                 <>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-border/50 border border-border/50 rounded-xl overflow-hidden mb-6">
-            <div className="bg-card p-4">
-              <p className="text-2xl font-semibold text-foreground tabular-nums">{total}</p>
-              <p className="text-xs text-muted-foreground mt-1">total participants</p>
-            </div>
-            <div className="bg-card p-4">
-              <p className="text-2xl font-semibold text-foreground tabular-nums">{invitedCount}</p>
-              <p className="text-xs text-muted-foreground mt-1">invited</p>
-            </div>
-            <div className="bg-card p-4">
-              <p className="text-2xl font-semibold text-foreground tabular-nums">{inProgressCount}</p>
-              <p className="text-xs text-muted-foreground mt-1">in progress</p>
-            </div>
-            <div className="bg-card p-4">
-              <p className="text-2xl font-semibold text-foreground tabular-nums">{completedRows.length}</p>
-              <p className="text-xs text-muted-foreground mt-1">completed</p>
-            </div>
-            <div className="bg-card p-4">
-              <p className="text-2xl font-semibold text-foreground tabular-nums">{awaitingCount}</p>
-              <p className="text-xs text-muted-foreground mt-1">awaiting completion</p>
-            </div>
-            <div className="bg-card p-4">
-              <p className="text-2xl font-semibold text-foreground tabular-nums">{completionPct}%</p>
-              <p className="text-xs text-muted-foreground mt-1">of team completed</p>
-            </div>
-            <div className="bg-card p-4 col-span-2">
-              <p className="text-2xl font-semibold text-foreground tabular-nums">{averageScore}</p>
-              <p className="text-xs text-muted-foreground mt-1">average resonance score</p>
-            </div>
-          </div>
-
           <div className="overflow-x-auto rounded-xl border border-border/50">
             <table className="w-full border-collapse">
               <thead className="bg-secondary">
@@ -609,7 +665,6 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
                   <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Invited</th>
                   <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Last Reminder</th>
                   <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Completed</th>
-                  <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Score</th>
                   <th className="p-3" />
                 </tr>
               </thead>
@@ -651,51 +706,60 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
                       <td className="p-3 text-sm text-muted-foreground whitespace-nowrap">
                         {sub?.completedAt ? formatDate(sub.completedAt) : "—"}
                       </td>
-                      <td className="p-3 text-sm text-foreground tabular-nums whitespace-nowrap">
-                        {sub?.resonanceScore != null ? `${sub.resonanceScore.toFixed(1)} / 5` : "—"}
-                      </td>
                       <td className="p-3">
                         <div className="flex items-center gap-1.5">
                           {!sub ? (
-                            <button
-                              onClick={() => sendIndividual(row)}
+                            <SendActionMenu
+                              icon={<SendStateIcon state={sendState_} idleIcon={<Send className="w-3.5 h-3.5" />} />}
                               disabled={sendState_ === "sending" || !hasValidSelection}
                               title={
                                 hasValidSelection
                                   ? titleForState(sendState_, "Send invite")
                                   : "Select and save 10 scenarios for this cluster first"
                               }
-                              className="flex items-center justify-center h-8 w-8 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
-                            >
-                              <SendStateIcon state={sendState_} idleIcon={<Send className="w-3.5 h-3.5" />} />
-                            </button>
+                              className="flex items-center justify-center gap-0.5 h-8 px-1.5 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
+                              testLabel="Send test to me"
+                              liveLabel="Send to participant"
+                              liveDisabled={!row.attendedAt}
+                              liveDisabledTitle="Hasn't attended See the Signals yet — check them off on the Roster tab first"
+                              onSendTest={() => sendTestIndividual(row)}
+                              onSendLive={() => sendIndividual(row)}
+                            />
                           ) : sub.status === "completed" ? (
-                            <Link href={`/admin/teams/${teamSlug}/nrs/${clusterKey}/${sub.id}`}>
-                              <button
-                                title="View responses"
-                                className="flex items-center justify-center h-8 w-8 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                              </button>
-                            </Link>
+                            // Already done — results live in the Team Snapshot tab, not
+                            // a per-row drill-down, so this is just a disabled marker
+                            // rather than a live "View responses" link.
+                            <button
+                              disabled
+                              title="Already completed"
+                              className="flex items-center justify-center h-8 w-8 shrink-0 border border-border/50 rounded-lg opacity-40 cursor-not-allowed"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                            </button>
                           ) : (
                             <>
-                              <button
-                                onClick={() => resendInvite(row)}
+                              <SendActionMenu
+                                icon={<SendStateIcon state={resendState} idleIcon={<Send className="w-3.5 h-3.5" />} />}
                                 disabled={resendState === "sending"}
                                 title={titleForState(resendState, "Resend invite")}
-                                className="flex items-center justify-center h-8 w-8 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
-                              >
-                                <SendStateIcon state={resendState} idleIcon={<Send className="w-3.5 h-3.5" />} />
-                              </button>
-                              <button
-                                onClick={() => remindOne(row)}
+                                className="flex items-center justify-center gap-0.5 h-8 px-1.5 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
+                                testLabel="Send test to me"
+                                liveLabel="Resend to participant"
+                                liveDisabled={!row.attendedAt}
+                                liveDisabledTitle="Hasn't attended See the Signals yet — check them off on the Roster tab first"
+                                onSendTest={() => sendTestResend(row)}
+                                onSendLive={() => resendInvite(row)}
+                              />
+                              <SendActionMenu
+                                icon={<SendStateIcon state={remindState} idleIcon={<Bell className="w-3.5 h-3.5" />} />}
                                 disabled={remindState === "sending"}
                                 title={titleForState(remindState, "Send reminder")}
-                                className="flex items-center justify-center h-8 w-8 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
-                              >
-                                <SendStateIcon state={remindState} idleIcon={<Bell className="w-3.5 h-3.5" />} />
-                              </button>
+                                className="flex items-center justify-center gap-0.5 h-8 px-1.5 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
+                                testLabel="Send test to me"
+                                liveLabel="Send to participant"
+                                onSendTest={() => sendTestRemind(row)}
+                                onSendLive={() => remindOne(row)}
+                              />
                             </>
                           )}
                         </div>
@@ -708,6 +772,50 @@ export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; team
           </div>
                 </>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {isConfigured && (
+        <div className="bg-card border border-border/50 rounded-2xl p-5 mt-6">
+          <h3 className="font-heading text-sm font-semibold text-foreground mb-4">Completion Stats</h3>
+          {!rows ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No one on the roster yet.</p>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-border/50 border border-border/50 rounded-xl overflow-hidden">
+              <div className="bg-card p-4">
+                <p className="text-2xl font-semibold text-foreground tabular-nums">{total}</p>
+                <p className="text-xs text-muted-foreground mt-1">total participants</p>
+              </div>
+              <div className="bg-card p-4">
+                <p className="text-2xl font-semibold text-foreground tabular-nums">{invitedCount}</p>
+                <p className="text-xs text-muted-foreground mt-1">invited</p>
+              </div>
+              <div className="bg-card p-4">
+                <p className="text-2xl font-semibold text-foreground tabular-nums">{inProgressCount}</p>
+                <p className="text-xs text-muted-foreground mt-1">in progress</p>
+              </div>
+              <div className="bg-card p-4">
+                <p className="text-2xl font-semibold text-foreground tabular-nums">{completedRows.length}</p>
+                <p className="text-xs text-muted-foreground mt-1">completed</p>
+              </div>
+              <div className="bg-card p-4">
+                <p className="text-2xl font-semibold text-foreground tabular-nums">{awaitingCount}</p>
+                <p className="text-xs text-muted-foreground mt-1">awaiting completion</p>
+              </div>
+              <div className="bg-card p-4">
+                <p className="text-2xl font-semibold text-foreground tabular-nums">{completionPct}%</p>
+                <p className="text-xs text-muted-foreground mt-1">of team completed</p>
+              </div>
+              <div className="bg-card p-4 col-span-2">
+                <p className="text-2xl font-semibold text-foreground tabular-nums">{averageScore}</p>
+                <p className="text-xs text-muted-foreground mt-1">average resonance score</p>
+              </div>
             </div>
           )}
         </div>

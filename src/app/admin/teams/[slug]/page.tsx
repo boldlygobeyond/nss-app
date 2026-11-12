@@ -37,6 +37,7 @@ import TeamNeedsHeatmap from "@/components/teams/TeamNeedsHeatmap";
 import NeedsSpectrum from "@/components/teams/NeedsSpectrum";
 import NrsTabPanel from "@/components/admin/nrs/NrsTabPanel";
 import NrsTeamSnapshot from "@/components/admin/nrs/NrsTeamSnapshot";
+import SendActionMenu from "@/components/admin/SendActionMenu";
 import GlobalHeader from "@/components/GlobalHeader";
 
 interface Team {
@@ -55,6 +56,7 @@ interface RosterEntry {
   manager_email: string;
   invited_at: string | null;
   missing_from_sheet: boolean;
+  attended_see_the_signals_at: string | null;
   // Persistent, independent of invited_at above — see sendOutcome.ts.
   // Derived from nss_send_log, not team_roster.
   inviteEmailStatus: InviteEmailStatus;
@@ -184,7 +186,9 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     const supabase = createClient();
     const { data } = await supabase
       .from("team_roster")
-      .select("id, first_name, last_name, email, manager_email, invited_at, missing_from_sheet")
+      .select(
+        "id, first_name, last_name, email, manager_email, invited_at, missing_from_sheet, attended_see_the_signals_at",
+      )
       .eq("team_id", teamId)
       .order("first_name")
       .order("last_name");
@@ -462,11 +466,47 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     setTimeout(() => setSendState((s) => ({ ...s, [entry.id]: "idle" })), 2500);
   };
 
+  // "Pending" means not yet invited AND cleared the launch prerequisite
+  // (attended See the Signals) — someone who hasn't attended is simply
+  // never counted as pending, so a bulk send silently excludes them
+  // rather than attempting and failing per person.
   const sendAllPending = async () => {
-    const pending = roster.filter((r) => !r.invited_at);
+    const pending = roster.filter((r) => !r.invited_at && r.attended_see_the_signals_at);
     for (const entry of pending) {
       await sendInvite(entry);
     }
+  };
+
+  // Previews this person's real, personalized invite email in the admin's
+  // own test inbox — the route skips creating a real invite/account, so
+  // this never touches roster state or send-log history, and never
+  // reaches the real participant.
+  const sendTestInvite = async (entry: RosterEntry) => {
+    setSendState((s) => ({ ...s, [entry.id]: "sending" }));
+    const res = await fetch("/api/nss/team-invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        firstName: entry.first_name,
+        lastName: entry.last_name,
+        email: entry.email,
+        team: slug,
+        managerEmail: entry.manager_email,
+        test: true,
+      }),
+    });
+    const body = await res.json().catch(() => null);
+    const result = toTeamInviteRowResult(res.ok, body);
+    const nextState: SendState = result.kind === "failed" ? "error" : result.kind;
+    setSendState((s) => ({ ...s, [entry.id]: nextState }));
+    setTimeout(() => setSendState((s) => ({ ...s, [entry.id]: "idle" })), 2500);
+  };
+
+  // Bulk "sample test" picks one representative pending person rather
+  // than test-sending to every one of them.
+  const sendSampleTestInvite = async () => {
+    const pending = roster.find((r) => !r.invited_at && r.attended_see_the_signals_at);
+    if (pending) await sendTestInvite(pending);
   };
 
   const handleRemove = async (entry: RosterEntry) => {
@@ -490,6 +530,25 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
       }
     } finally {
       setRemovingId(null);
+    }
+  };
+
+  // Optimistic — reverts on failure. This is the one gate between a
+  // roster row and ever being sent a real NSS/NRS invite (see the
+  // attendance check in those routes), so it's worth not making the admin
+  // wait on a round trip just to see the box tick.
+  const toggleAttended = async (entry: RosterEntry) => {
+    if (!team) return;
+    const previous = entry.attended_see_the_signals_at;
+    const next = previous ? null : new Date().toISOString();
+    setRoster((prev) => prev.map((r) => (r.id === entry.id ? { ...r, attended_see_the_signals_at: next } : r)));
+    const res = await fetch(`/api/nss/teams/${team.slug}/roster/${entry.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attended: !!next }),
+    });
+    if (!res.ok) {
+      setRoster((prev) => prev.map((r) => (r.id === entry.id ? { ...r, attended_see_the_signals_at: previous } : r)));
     }
   };
 
@@ -536,7 +595,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     }
   };
 
-  const pendingCount = roster.filter((r) => !r.invited_at).length;
+  const pendingCount = roster.filter((r) => !r.invited_at && r.attended_see_the_signals_at).length;
 
   // One row per roster member (not per report) — matches the Roster tab's
   // own notion of "who's on this team," so someone who hasn't started
@@ -617,7 +676,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                 ["nssInvites", "NSS Invites"],
                 ["reports", "NSS Reports"],
                 ["snapshot", "NSS Team Snapshot"],
-                ["nrs", "Needs Resonance Scan"],
+                ["nrs", "NRS Invites"],
                 ["nrsSnapshot", "NRS Team Snapshot"],
               ] as const).map(([key, label]) => (
                 <button
@@ -671,6 +730,11 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                         <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Name</th>
                         <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</th>
                         <th className="text-left p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Manager</th>
+                        <th className="w-px p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center whitespace-nowrap">
+                          Attended
+                          <br />
+                          See the Signals
+                        </th>
                         <th className="p-3" />
                       </tr>
                     </thead>
@@ -687,6 +751,19 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                           </td>
                           <td className="p-3 text-sm text-muted-foreground break-all">{entry.email}</td>
                           <td className="p-3 text-sm text-muted-foreground break-all">{entry.manager_email}</td>
+                          <td className="w-px p-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={!!entry.attended_see_the_signals_at}
+                              onChange={() => toggleAttended(entry)}
+                              title={
+                                entry.attended_see_the_signals_at
+                                  ? `Attended on ${formatDate(entry.attended_see_the_signals_at)}`
+                                  : "Hasn't attended yet — ineligible for NSS/NRS invites until checked"
+                              }
+                              className="w-4 h-4 rounded border-border/50 accent-primary cursor-pointer"
+                            />
+                          </td>
                           <td className="p-3">
                             {entry.missing_from_sheet && (
                               <button
@@ -716,12 +793,18 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="font-heading text-sm font-semibold text-foreground">NSS Invites</h2>
                   {pendingCount > 0 && (
-                    <button
-                      onClick={sendAllPending}
+                    <SendActionMenu
+                      icon={
+                        <>
+                          <Send className="w-3.5 h-3.5" /> Send all pending ({pendingCount})
+                        </>
+                      }
                       className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-                    >
-                      <Send className="w-3.5 h-3.5" /> Send all pending ({pendingCount})
-                    </button>
+                      testLabel="Send sample test to me"
+                      liveLabel={`Send to all (${pendingCount})`}
+                      onSendTest={sendSampleTestInvite}
+                      onSendLive={sendAllPending}
+                    />
                   )}
                 </div>
 
@@ -765,24 +848,30 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                               {entry.invited_at ? `Invited ${formatDate(entry.invited_at)}` : "Not invited"}
                             </td>
                             <td className="p-3">
-                              <button
-                                onClick={() => sendInvite(entry)}
+                              <SendActionMenu
+                                icon={
+                                  state === "sending" ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : state === "sent" ? (
+                                    <Check className="w-3.5 h-3.5 text-primary" />
+                                  ) : state === "mocked" ? (
+                                    <Check className="w-3.5 h-3.5 text-muted-foreground" />
+                                  ) : state === "error" ? (
+                                    <X className="w-3.5 h-3.5 text-destructive" />
+                                  ) : (
+                                    <Send className="w-3.5 h-3.5" />
+                                  )
+                                }
                                 disabled={state === "sending"}
                                 title={entry.invited_at ? "Resend invite" : "Send invite"}
-                                className="flex items-center justify-center h-8 w-8 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
-                              >
-                                {state === "sending" ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : state === "sent" ? (
-                                  <Check className="w-3.5 h-3.5 text-primary" />
-                                ) : state === "mocked" ? (
-                                  <Check className="w-3.5 h-3.5 text-muted-foreground" />
-                                ) : state === "error" ? (
-                                  <X className="w-3.5 h-3.5 text-destructive" />
-                                ) : (
-                                  <Send className="w-3.5 h-3.5" />
-                                )}
-                              </button>
+                                className="flex items-center justify-center gap-0.5 h-8 px-1.5 shrink-0 border border-border/50 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50"
+                                testLabel="Send test to me"
+                                liveLabel={entry.invited_at ? "Resend to participant" : "Send to participant"}
+                                liveDisabled={!entry.attended_see_the_signals_at}
+                                liveDisabledTitle="Hasn't attended See the Signals yet — check them off on the Roster tab first"
+                                onSendTest={() => sendTestInvite(entry)}
+                                onSendLive={() => sendInvite(entry)}
+                              />
                             </td>
                           </tr>
                         );
@@ -942,7 +1031,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
 
             {tab === "nrs" && team && (
               <div>
-                <h2 className="font-heading text-sm font-semibold text-foreground mb-3">Needs Resonance Scan</h2>
+                <h2 className="font-heading text-sm font-semibold text-foreground mb-3">NRS Invites</h2>
                 <NrsTabPanel teamId={team.id} teamSlug={slug} />
               </div>
             )}

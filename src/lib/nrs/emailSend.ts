@@ -22,10 +22,11 @@ export async function sendNrsEmail(payload: {
   to: string;
   subject: string;
   html: string;
+  bcc?: string;
   tag: { name: string; value: string };
 }): Promise<NrsSendOutcome> {
   if (sendMode() === "mock") {
-    console.log("[nrs-email-mock]", { to: payload.to, subject: payload.subject, tag: payload.tag });
+    console.log("[nrs-email-mock]", { to: payload.to, subject: payload.subject, bcc: payload.bcc, tag: payload.tag });
     return { outcome: "mocked" };
   }
 
@@ -41,6 +42,7 @@ export async function sendNrsEmail(payload: {
         to: payload.to,
         subject: payload.subject,
         html: payload.html,
+        ...(payload.bcc ? { bcc: payload.bcc } : {}),
         tags: [payload.tag],
       }),
     });

@@ -34,6 +34,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
         const sendResult = await sendNrsResultsEmail({
           to: submission.roster.email,
           score: result.score,
+          clusterKey: submission.clusterKey,
           logoUrl: `${origin}/logo/bgb-line-almond.png`,
           submissionId: submission.id,
         });
