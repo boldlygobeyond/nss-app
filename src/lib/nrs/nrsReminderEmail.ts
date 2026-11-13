@@ -43,7 +43,7 @@ export async function sendNrsReminderEmail(params: {
                 <p style="margin:0 0 16px; font-size:14px; color:#6b7280;">Hey ${params.firstName},</p>
 
                 <p style="margin:0 0 20px; font-size:15px; line-height:1.6; color:#374151;">
-                  Just a quick reminder to complete this week's <strong>${clusterName}</strong> reflection before your team conversation.
+                  Just a quick reminder to complete this week's <strong>${clusterName}</strong> scan before your team conversation.
                 </p>
 
                 <p style="margin:0 0 24px; font-size:15px; line-height:1.6; color:#374151;">
