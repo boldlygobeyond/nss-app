@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import NrsProgressIndicator from "@/components/nrs/NrsProgressIndicator";
 import RatingOption from "@/components/nrs/RatingOption";
 import { NRS_RATINGS } from "@/lib/nrs/ratingScale";
 
@@ -184,7 +183,12 @@ export default function NrsClient({ token }: { token: string }) {
 
   return (
     <div className="flex-1 max-w-2xl w-full mx-auto px-4 py-6 flex flex-col">
-      <NrsProgressIndicator current={answeredCount} total={total} />
+      <h1 className="font-heading text-2xl md:text-3xl font-semibold text-foreground mb-1">{data.clusterName}</h1>
+      <p className="font-heading text-lg md:text-xl font-medium text-foreground mb-3">Needs Resonance Scan</p>
+
+      <p className="text-base text-foreground mb-4">
+        For each scenario below, rate how important having this need met is for you to show up fully on your team.
+      </p>
 
       {errorMessage && (
         <div
@@ -202,26 +206,22 @@ export default function NrsClient({ token }: { token: string }) {
         </div>
       )}
 
-      <div className="flex flex-col gap-6">
+      <div className="bg-card rounded-2xl border border-border/50 shadow-sm p-6 md:p-8 flex flex-col gap-8">
         {data.questions.map((question, i) => (
           <motion.div
             key={question.id}
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             // Capped stagger delay — a gentle entrance for the first few
-            // cards without making the admin/participant wait through 10
+            // scenarios without making the participant wait through 10
             // sequential delays to see the bottom of a 10-question page.
             transition={{ duration: 0.3, delay: Math.min(i * 0.04, 0.3) }}
-            className="bg-card rounded-2xl border border-border/50 shadow-sm p-6 md:p-8"
+            className={i > 0 ? "pt-8 border-t border-border/50" : ""}
           >
             <p className="text-xs font-medium text-muted-foreground mb-2">Scenario {question.order}</p>
             <h2 className="font-heading text-lg md:text-xl font-medium text-foreground mb-6 leading-relaxed">
               {question.scenarioText}
             </h2>
-            <p className="text-sm text-foreground font-medium mb-1">
-              How important is it that this need is met here for you to show up fully?
-            </p>
-            <p className="text-xs text-muted-foreground mb-5">Hover over a rating to learn more.</p>
 
             <div className="grid grid-cols-5 gap-1.5 sm:gap-3">
               {NRS_RATINGS.map((r) => (

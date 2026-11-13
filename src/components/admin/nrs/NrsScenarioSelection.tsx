@@ -178,21 +178,6 @@ export default function NrsScenarioSelection({
           <span className={`text-xs font-medium tabular-nums ${selectedIds.size === REQUIRED_COUNT ? "text-primary" : "text-muted-foreground"}`}>
             {selectedIds.size} of {REQUIRED_COUNT} selected
           </span>
-          {!locked && (
-            <>
-              {hasUnsavedChanges && !justSaved && (
-                <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Unsaved changes</span>
-              )}
-              {justSaved && !hasUnsavedChanges && <span className="text-xs text-primary font-medium">Saved</span>}
-              <button
-                onClick={handleSave}
-                disabled={selectedIds.size !== REQUIRED_COUNT || !hasUnsavedChanges || saving}
-                className="h-8 px-3 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:pointer-events-none"
-              >
-                {saving ? "Saving..." : "Save Selection"}
-              </button>
-            </>
-          )}
         </div>
       </div>
 
@@ -246,6 +231,22 @@ export default function NrsScenarioSelection({
               );
             })}
           </div>
+
+          {!locked && (
+            <div className="flex items-center justify-end gap-3 mt-5">
+              {hasUnsavedChanges && !justSaved && (
+                <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Unsaved changes</span>
+              )}
+              {justSaved && !hasUnsavedChanges && <span className="text-xs text-primary font-medium">Saved</span>}
+              <button
+                onClick={handleSave}
+                disabled={selectedIds.size !== REQUIRED_COUNT || !hasUnsavedChanges || saving}
+                className="h-8 px-3 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+              >
+                {saving ? "Saving..." : "Save Selection"}
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>
