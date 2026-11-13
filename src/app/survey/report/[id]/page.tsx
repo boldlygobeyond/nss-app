@@ -77,7 +77,7 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
   }, [id]);
 
   const handleViewReport = () => {
-    window.open(`/reports/${id}`, "_blank", "noopener,noreferrer");
+    window.location.href = `/reports/${id}`;
   };
 
   const handleScheduleCall = () => {
@@ -94,7 +94,7 @@ export default function SurveyReportGeneratingPage({ params }: { params: Promise
             ? isTeam
               ? "Your Needs Signal Report is ready!"
               : "Your report is ready! Scroll to the bottom of the page to access your results."
-            : isTeam && statusIndex === 0
+            : isTeam
               ? "Your Needs Signal Report is generating..."
               : STATUS_MESSAGES[statusIndex]}
         </p>

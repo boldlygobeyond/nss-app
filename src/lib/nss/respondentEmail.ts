@@ -66,7 +66,7 @@ export async function sendRespondentReportEmail(params: {
                   <tr>
                     <td style="border-radius:8px; background-color:#0d9488;">
                       <a href="${downloadUrl}" style="display:inline-block; padding:12px 24px; font-size:15px; font-weight:600; color:#ffffff; text-decoration:none;">
-                        View Your Needs Signal Report
+                        Download Your Needs Signal Report
                       </a>
                     </td>
                   </tr>
