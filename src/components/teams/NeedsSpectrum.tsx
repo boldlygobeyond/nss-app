@@ -159,9 +159,14 @@ export default function NeedsSpectrum({
         })}
       </div>
 
-      <div className="flex items-center justify-between mt-3 max-w-md mx-auto text-sm text-muted-foreground">
-        <span>Less favored</span>
-        <span>More favored</span>
+      <div className="flex items-center gap-3 mt-3 max-w-md mx-auto text-sm text-muted-foreground">
+        <span className="shrink-0">Less favored</span>
+        <div className="flex-1 relative h-3">
+          <div className="absolute inset-x-1.5 top-1/2 -translate-y-1/2 h-px bg-muted-foreground/40" />
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0 h-0 border-y-[4px] border-y-transparent border-r-[6px] border-r-muted-foreground/40" />
+          <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0 h-0 border-y-[4px] border-y-transparent border-l-[6px] border-l-muted-foreground/40" />
+        </div>
+        <span className="shrink-0">More favored</span>
       </div>
 
       {tooltip && (

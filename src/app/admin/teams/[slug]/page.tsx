@@ -1010,7 +1010,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                             <ChevronDown
                               className={`w-4 h-4 text-muted-foreground transition-transform ${heatmapCollapsed ? "-rotate-90" : ""}`}
                             />
-                            Our Team&apos;s Needs Landscape
+                            Our Needs at a Glance
                           </button>
                           {!heatmapCollapsed && (
                             <div className="mt-4">
@@ -1027,7 +1027,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                             <ChevronDown
                               className={`w-4 h-4 text-muted-foreground transition-transform ${spectrumCollapsed ? "-rotate-90" : ""}`}
                             />
-                            Our Team&apos;s Needs Profile
+                            Where We Align &amp; Differ
                           </button>
                           {!spectrumCollapsed && (
                             <div className="mt-4">

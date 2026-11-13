@@ -123,7 +123,7 @@ interface NrsRosterRow {
 
 export default function NrsTabPanel({ teamId, teamSlug }: { teamId: string; teamSlug: string }) {
   const [configuredClusters, setConfiguredClusters] = useState<Set<ClusterKey> | null>(null);
-  const [clusterKey, setClusterKey] = useState<ClusterKey>("Stability");
+  const [clusterKey, setClusterKey] = useState<ClusterKey>(CLUSTERS[0]);
   const [rows, setRows] = useState<NrsRosterRow[] | null>(null);
   const [sendState, setSendState] = useState<Record<string, SendState>>({});
   const [actionError, setActionError] = useState<string | null>(null);
