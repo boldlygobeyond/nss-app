@@ -187,7 +187,7 @@ export default function NrsClient({ token }: { token: string }) {
       <p className="font-heading text-lg md:text-xl font-medium text-foreground mb-3">Needs Resonance Scan</p>
 
       <p className="text-base text-foreground mb-4">
-        For each scenario below, rate how important having this need met is for you to show up fully on your team.
+        For each scenario below, rate how important this would be for you to show up fully on your team.
       </p>
 
       {errorMessage && (
