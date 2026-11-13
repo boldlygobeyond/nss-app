@@ -38,7 +38,7 @@ export async function sendTeamInviteEmail(params: {
             <tr>
               <td style="padding:36px 32px 8px;">
                 <p style="margin:0 0 16px; font-size:14px; color:#6b7280;">Hey ${firstName},</p>
-                <h1 style="margin:0 0 20px; font-size:22px; color:#111827;">What comes first when everything matters?</h1>
+                <h1 style="margin:0 0 20px; font-size:22px; color:#111827;">Which needs take the lead?</h1>
 
                 <p style="margin:0 0 20px; font-size:15px; line-height:1.6; color:#374151;">
                   The <strong>Needs Signal Survey</strong> is a quick "would you rather" style quiz that helps you
