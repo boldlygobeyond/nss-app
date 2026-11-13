@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile } from "@/lib/nss/userProfiles";
 import { fetchQuestions, type SurveyQuestion } from "@/lib/nss/questions";
@@ -139,7 +138,7 @@ function pullNextQuestionBt(
   return selectNextBtQuestion(pool, btResponsesSoFar, usedIdsSoFar, stateForSelection, answeredSoFar);
 }
 
-type Phase = "loading" | "greeting" | "survey" | "completing";
+type Phase = "loading" | "greeting" | "survey";
 
 export default function SurveyClient() {
   const router = useRouter();
@@ -147,6 +146,12 @@ export default function SurveyClient() {
   const supabase = useRef(createClient()).current;
 
   const [phase, setPhase] = useState<Phase>("loading");
+  // Set the instant the last question is answered, while finishSubmission's
+  // write (and then navigation) is in flight — just long enough to disable
+  // the question buttons so a stray click can't double-submit, not a
+  // full-screen takeover: the write itself is a single fast DB update, not
+  // something worth its own "Analyzing..." screen.
+  const [isFinishing, setIsFinishing] = useState(false);
   const [questions, setQuestions] = useState<SurveyQuestion[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -516,7 +521,7 @@ export default function SurveyClient() {
   // ── Finish survey ─────────────────────────────────────────────────────────
   const finishSurvey = useCallback(
     async (finalTally: Tally, answered: number, seq: SurveyQuestion[], finalBtResponses: BtResponse[]) => {
-      setPhase("completing");
+      setIsFinishing(true);
       const topNeeds = getTopNeeds(finalTally);
       const scores = tallyToScores(finalTally);
 
@@ -904,20 +909,6 @@ export default function SurveyClient() {
     );
   }
 
-  if (phase === "completing") {
-    return (
-      <div className="flex items-center justify-center min-h-[80vh]">
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
-          <h2 className="font-heading text-2xl font-semibold text-foreground mb-2">Analyzing your responses...</h2>
-          <p className="text-muted-foreground">Nova is reviewing your signal patterns.</p>
-          <div className="mt-6">
-            <div className="w-8 h-8 border-4 border-secondary border-t-primary rounded-full animate-spin mx-auto" />
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex-1 max-w-3xl w-full mx-auto px-4 py-6 flex flex-col">
       {writeFailureNotice && (
@@ -939,7 +930,8 @@ export default function SurveyClient() {
       <div className="mb-3">
         <button
           onClick={handleBack}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          disabled={isFinishing}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -955,6 +947,7 @@ export default function SurveyClient() {
           onAnswer={handleAnswer}
           onItDepends={handleItDepends}
           onSkip={handleSkip}
+          disabled={isFinishing}
           reviewing={isReviewing}
           selectedOption={
             currentHistoryEntry?.status === "answered" && currentHistoryEntry.is_sharpened_question === isSharpened

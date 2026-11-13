@@ -258,20 +258,46 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
     return statusByEmail;
   };
 
-  // Polled every few seconds (see the effect below) so the roster dot
-  // moves from in-progress to complete on its own while someone's
-  // actually taking the survey, without the admin reloading the page.
-  // Deliberately NOT the same query loadReports runs — that one also
-  // scans every nss_responses row platform-wide to compute each report's
-  // completedAt date for the Reports tab, which doesn't need to happen
-  // every few seconds just to keep a status dot current.
+  // Shared by loadReports and pollNssStatus so "which submissions count as
+  // a finished report, and which one wins per person" can't drift between
+  // the two call sites.
+  const deriveReports = (
+    rows: {
+      id: string;
+      respondent_name: string;
+      user_email: string | null;
+      user_id: string;
+      status: string;
+      completed_at: string | null;
+    }[],
+  ): ReportEntry[] =>
+    rows
+      .filter((s) => s.status === "completed" || s.status === "report_generated")
+      .map((s) => ({ ...s, completedAt: s.completed_at }))
+      .sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""))
+      // One entry per person — a retake should replace their earlier
+      // submission everywhere this feeds (reports list, team snapshot),
+      // not show up alongside it. The array is already sorted
+      // most-recent first, so keeping each user_id's first occurrence
+      // keeps their latest completed submission.
+      .filter((r, i, arr) => arr.findIndex((x) => x.user_id === r.user_id) === i);
+
+  // Polled every few seconds (see the effect below) so the roster dot and
+  // the NSS Reports tab both update live while someone's actually taking
+  // the survey (or just finished it) in another tab/device, without the
+  // admin reloading the page. Same per-team query loadReports runs below —
+  // reusing it here is what keeps both lists current, not an extra,
+  // heavier query of its own; only the one-time profiles fetch is skipped,
+  // since every respondent this could newly surface already got a
+  // profile row at invite time.
   const pollNssStatus = async () => {
     const supabase = createClient();
     const { data: allSubmissions } = await supabase
       .from("nss_submissions")
-      .select("user_email, status")
+      .select("id, respondent_name, user_email, user_id, status, completed_at")
       .eq("team", slug);
     setNssStatusByEmail(mergeStatusByEmail(allSubmissions ?? []));
+    setReports(deriveReports(allSubmissions ?? []));
   };
 
   const loadReports = async () => {
@@ -285,20 +311,7 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
       .eq("team", slug);
 
     setNssStatusByEmail(mergeStatusByEmail(allSubmissions ?? []));
-
-    const submissions = (allSubmissions ?? []).filter((s) => s.status === "completed" || s.status === "report_generated");
-
-    setReports(
-      submissions
-        .map((s) => ({ ...s, completedAt: s.completed_at }))
-        .sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""))
-        // One entry per person — a retake should replace their earlier
-        // submission everywhere this feeds (reports list, team snapshot),
-        // not show up alongside it. The array is already sorted
-        // most-recent first, so keeping each user_id's first occurrence
-        // keeps their latest completed submission.
-        .filter((r, i, arr) => arr.findIndex((x) => x.user_id === r.user_id) === i),
-    );
+    setReports(deriveReports(allSubmissions ?? []));
 
     const allProfiles = await listAllProfiles(supabase);
     setProfiles(Object.fromEntries(allProfiles.map((p) => [p.id, p])));

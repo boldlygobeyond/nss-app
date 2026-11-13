@@ -8,17 +8,20 @@ function OptionButton({
   letter,
   text,
   selected,
+  disabled,
   onClick,
 }: {
   letter: "A" | "B";
   text: string;
   selected?: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left flex items-start h-auto py-4 px-5 text-sm md:text-base font-normal leading-relaxed border rounded-xl transition-all whitespace-normal ${
+      disabled={disabled}
+      className={`w-full text-left flex items-start h-auto py-4 px-5 text-sm md:text-base font-normal leading-relaxed border rounded-xl transition-all whitespace-normal disabled:opacity-50 disabled:cursor-not-allowed ${
         selected
           ? letter === "A"
             ? "bg-primary/10 border-primary/40"
@@ -62,6 +65,7 @@ export default function QuestionCard({
   onAnswer,
   onItDepends,
   onSkip,
+  disabled = false,
   reviewing = false,
   selectedOption = null,
   skipped = false,
@@ -72,6 +76,10 @@ export default function QuestionCard({
   onAnswer: (choice: "A" | "B") => void;
   onItDepends: () => void;
   onSkip: () => void;
+  // True for the brief window between answering the last question and
+  // navigating away — just disables the buttons so a stray click can't
+  // double-submit while finishSubmission's write is in flight.
+  disabled?: boolean;
   reviewing?: boolean;
   selectedOption?: "A" | "B" | null;
   skipped?: boolean;
@@ -133,19 +141,22 @@ export default function QuestionCard({
                   letter="A"
                   text={question.sharpened.options.A}
                   selected={selectedOption === "A"}
+                  disabled={disabled}
                   onClick={() => onAnswer("A")}
                 />
                 <OptionButton
                   letter="B"
                   text={question.sharpened.options.B}
                   selected={selectedOption === "B"}
+                  disabled={disabled}
                   onClick={() => onAnswer("B")}
                 />
               </div>
               <div className="mt-5 flex items-center justify-center gap-4">
                 <button
                   onClick={onSkip}
-                  className="text-muted-foreground hover:text-foreground text-sm transition-colors"
+                  disabled={disabled}
+                  className="text-muted-foreground hover:text-foreground text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Skip this one
                 </button>
@@ -170,19 +181,22 @@ export default function QuestionCard({
                 letter="A"
                 text={question.standard.options.A}
                 selected={selectedOption === "A"}
+                disabled={disabled}
                 onClick={() => onAnswer("A")}
               />
               <OptionButton
                 letter="B"
                 text={question.standard.options.B}
                 selected={selectedOption === "B"}
+                disabled={disabled}
                 onClick={() => onAnswer("B")}
               />
             </div>
             <div className="mt-5 flex items-center justify-center gap-4">
               <button
                 onClick={onItDepends}
-                className="text-muted-foreground hover:text-foreground text-sm transition-colors"
+                disabled={disabled}
+                className="text-muted-foreground hover:text-foreground text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 It Depends
               </button>
