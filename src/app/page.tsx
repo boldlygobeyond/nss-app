@@ -67,7 +67,7 @@ function LandingPage() {
 
           <div className="bg-card border border-border/50 rounded-2xl p-6 md:p-8 text-center shadow-sm mb-8">
             <p className="text-foreground text-base md:text-lg leading-relaxed mb-6">
-              Take this free 50-question &quot;would you rather&quot; style quiz today and get instant insights
+              Take this free 12-minute &quot;would you rather&quot; style quiz today and get instant insights
               that you can use to advocate for what you need to show up as your best.
             </p>
             <button

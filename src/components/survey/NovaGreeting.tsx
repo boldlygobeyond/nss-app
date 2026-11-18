@@ -184,8 +184,8 @@ export default function NovaGreeting({
             </h2>
             <div className="bg-card border border-border/50 rounded-2xl p-6 md:p-8 text-left shadow-sm mb-8">
               <p className="text-foreground text-base md:text-lg leading-relaxed mb-4">
-                I&apos;m going to guide you through 50 &quot;would you rather&quot; style questions to explore which
-                human needs matter most to you.
+                I&apos;m going to guide you through a series of &quot;would you rather&quot; style questions to
+                explore which human needs matter most to you.
               </p>
               <p className="text-foreground text-base md:text-lg leading-relaxed mb-4">
                 Each question presents two needs. Both may be important to you, but we&apos;re interested in which one
