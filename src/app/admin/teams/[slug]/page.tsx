@@ -16,6 +16,7 @@ import {
   ExternalLink,
   X,
   Mail,
+  Download,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMyProfile, listAllProfiles } from "@/lib/nss/userProfiles";
@@ -26,13 +27,10 @@ import {
   type InviteEmailStatus,
 } from "@/lib/nss/sendOutcome";
 import { buildFullName } from "@/lib/nss/reportFilename";
-import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import { rosterRowsFromGrid } from "@/lib/nss/rosterCsv";
 import { fetchRosterGridForSpreadsheet } from "@/lib/nss/googlePicker";
-import type { ClusterKey } from "@/lib/nss/clusters";
-import type { BtResponse } from "@/lib/nss/bradleyTerry";
-import { computeTeamMemberScores, computeTeamRowOrder, type TeamMemberScore } from "@/lib/nss/teamScores";
-import { latestResponsePerQuestion } from "@/lib/nss/responseDedup";
+import { computeTeamRowOrder, type TeamMemberScore } from "@/lib/nss/teamScores";
+import { loadTeamSnapshotScores } from "@/lib/nss/teamSnapshot";
 import TeamNeedsHeatmap from "@/components/teams/TeamNeedsHeatmap";
 import NeedsSpectrum from "@/components/teams/NeedsSpectrum";
 import NrsTabPanel from "@/components/admin/nrs/NrsTabPanel";
@@ -160,6 +158,8 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
   // screen at once.
   const [heatmapCollapsed, setHeatmapCollapsed] = useState(true);
   const [spectrumCollapsed, setSpectrumCollapsed] = useState(true);
+  const [downloadingSnapshotPdf, setDownloadingSnapshotPdf] = useState(false);
+  const [snapshotPdfError, setSnapshotPdfError] = useState<string | null>(null);
 
   const [sendState, setSendState] = useState<Record<string, SendState>>({});
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -329,62 +329,36 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
         return;
       }
       const supabase = createClient();
-      const ids = completed.map((r) => r.id);
-      const allResponses = await fetchAllRows<{
-        submission_id: string;
-        question_id: number;
-        chosen_clusters: ClusterKey[];
-        rejected_clusters: ClusterKey[];
-        answered_at: string;
-      }>((from, to) =>
-        supabase
-          .from("nss_responses")
-          .select("submission_id, question_id, chosen_clusters, rejected_clusters, answered_at")
-          .in("submission_id", ids)
-          .order("id")
-          .range(from, to),
-      );
-      const rawBySubmission = new Map<string, typeof allResponses>();
-      allResponses.forEach((r) => {
-        const list = rawBySubmission.get(r.submission_id) ?? [];
-        list.push(r);
-        rawBySubmission.set(r.submission_id, list);
-      });
-      // Deduplicated per submission (a question can have more than one
-      // stored row for the same submission — see
-      // NSS_Back_Navigation_And_Duplicate_Fix.md) before anyone's responses feed into
-      // team scoring, same rule every other scoring consumer uses.
-      const bySubmission = new Map<string, BtResponse[]>();
-      rawBySubmission.forEach((rows, submissionId) => {
-        bySubmission.set(
-          submissionId,
-          latestResponsePerQuestion(rows).map((r) => ({
-            chosen_clusters: r.chosen_clusters,
-            rejected_clusters: r.rejected_clusters,
-          })),
-        );
-      });
-
-      const members = completed
-        .map((r) => {
-          const responses = bySubmission.get(r.id) ?? [];
-          if (responses.length === 0) return null;
-          const profile = profiles[r.user_id];
-          const fullName = buildFullName(profile?.first_name, profile?.last_name, r.respondent_name);
-          const [firstName, ...rest] = fullName.split(" ");
-          return {
-            userId: r.user_id,
-            submissionId: r.id,
-            firstName: firstName || fullName,
-            lastName: rest.join(" "),
-            responses,
-          };
-        })
-        .filter((m): m is NonNullable<typeof m> => m !== null);
-
-      setSnapshotScores(computeTeamMemberScores(members));
+      setSnapshotScores(await loadTeamSnapshotScores(supabase, slug));
     } finally {
       snapshotLoadingRef.current = false;
+    }
+  };
+
+  const handleDownloadSnapshotPdf = async () => {
+    setDownloadingSnapshotPdf(true);
+    setSnapshotPdfError(null);
+    try {
+      const res = await fetch(`/api/nss/teams/${slug}/snapshot-pdf`);
+      if (!res.ok) throw new Error("PDF generation failed");
+
+      const disposition = res.headers.get("content-disposition") ?? "";
+      const match = disposition.match(/filename\*=UTF-8''([^;]+)/) ?? disposition.match(/filename="([^"]+)"/);
+      const fileName = match ? decodeURIComponent(match[1]) : `${team?.name ?? "Team"} - Needs Snapshot.pdf`;
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setSnapshotPdfError("Could not generate the PDF. Please try again.");
+    } finally {
+      setDownloadingSnapshotPdf(false);
     }
   };
 
@@ -1002,6 +976,18 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ slug: 
                     const rowOrder = computeTeamRowOrder(snapshotScores);
                     return (
                       <div className="space-y-4">
+                        <div className="flex items-center justify-end gap-3">
+                          {snapshotPdfError && <p className="text-xs text-destructive">{snapshotPdfError}</p>}
+                          <button
+                            onClick={handleDownloadSnapshotPdf}
+                            disabled={downloadingSnapshotPdf}
+                            className="h-9 px-3.5 text-xs font-medium rounded-lg border border-border/50 bg-card hover:bg-secondary/60 text-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center gap-1.5"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            {downloadingSnapshotPdf ? "Preparing PDF..." : "Download PDF"}
+                          </button>
+                        </div>
+
                         <div className="bg-card border border-border/50 rounded-2xl p-5">
                           <button
                             onClick={() => setHeatmapCollapsed((c) => !c)}

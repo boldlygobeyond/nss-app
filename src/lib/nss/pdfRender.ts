@@ -18,23 +18,21 @@ import puppeteer, { type Browser, type Page } from "puppeteer-core";
 const DEV_CHROME_PATH =
   process.env.CHROME_EXECUTABLE_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
-async function launchBrowser(): Promise<Browser> {
+const DEFAULT_VIEWPORT = { width: 1240, height: 1754, deviceScaleFactor: 1 };
+
+async function launchBrowser(viewport: { width: number; height: number; deviceScaleFactor: number }): Promise<Browser> {
   if (process.env.NODE_ENV !== "production") {
-    // Match production's viewport — layouts using vh-based "pin to the
-    // bottom of the page" tricks (the cover page's intro box) render
-    // against whatever viewport is active, and Puppeteer's 800x600 default
-    // doesn't match an A4 page's proportions the way this one does.
     return puppeteer.launch({
       executablePath: DEV_CHROME_PATH,
       headless: true,
-      defaultViewport: { width: 1240, height: 1754, deviceScaleFactor: 1 },
+      defaultViewport: viewport,
     });
   }
 
   const chromium = (await import("@sparticuz/chromium")).default;
   return puppeteer.launch({
     args: await puppeteer.defaultArgs({ args: chromium.args, headless: "shell" }),
-    defaultViewport: { width: 1240, height: 1754, deviceScaleFactor: 1 },
+    defaultViewport: viewport,
     executablePath: await chromium.executablePath(),
     headless: "shell",
   });
@@ -44,6 +42,7 @@ async function openAuthenticatedPage(
   browser: Browser,
   url: string,
   cookies: { name: string; value: string }[],
+  waitForSelector?: string,
 ): Promise<Page> {
   const page = await browser.newPage();
   const origin = new URL(url).origin;
@@ -53,6 +52,12 @@ async function openAuthenticatedPage(
   await page.emulateMediaType("print");
   await page.goto(url, { waitUntil: "networkidle0", timeout: 30000 });
   await page.evaluate(() => document.fonts.ready);
+  // Some capture targets (e.g. the Team Snapshot print page) finish their
+  // own client-side measure-then-layout pass slightly after the network
+  // goes idle — wait for their own readiness marker instead of racing it.
+  if (waitForSelector) {
+    await page.waitForSelector(waitForSelector, { timeout: 10000 });
+  }
   return page;
 }
 
@@ -85,20 +90,69 @@ function buildFooterTemplate(logoDataUri: string): string {
 export async function renderReportPdf(params: {
   url: string;
   cookies: { name: string; value: string }[];
+  waitForSelector?: string;
+  margin?: { top?: string; bottom?: string; left?: string; right?: string };
+  landscape?: boolean;
+  // Switches the browser's own viewport to match the physical page's
+  // content box (in px at 96dpi) instead of the default 1240x1754 —
+  // Puppeteer's print pass reflows purely against the target page size,
+  // invisibly to the page's own script, so any client-side layout math
+  // that calls getBoundingClientRect() (e.g. a chart placing labels to
+  // avoid overlap) would otherwise measure the wrong — much wider —
+  // viewport and get the wrong answer for what will actually print.
+  // Matching the viewport up front keeps what the page measures and what
+  // finally prints in sync. Independent of fitHeightToOnePage below: a
+  // multi-page capture can still need accurate per-page measurement.
+  matchViewportToPage?: boolean;
+  // When true, measures the page's actual rendered height and shrinks the
+  // whole capture (Puppeteer's own print `scale`) just enough to guarantee
+  // it lands on one physical page — rather than hand-tuning the content's
+  // own CSS to guess at a page budget that only holds for some team sizes.
+  // Left off for anything deliberately multi-page.
+  fitHeightToOnePage?: boolean;
 }): Promise<Buffer> {
-  const browser = await launchBrowser();
+  const margin = {
+    top: params.margin?.top ?? "0.6in",
+    bottom: params.margin?.bottom ?? "0.85in",
+    left: params.margin?.left ?? "0.6in",
+    right: params.margin?.right ?? "0.6in",
+  };
+  const pageWidthIn = params.landscape ? 11 : 8.5;
+  const pageHeightIn = params.landscape ? 8.5 : 11;
+  const contentWidthPx = (pageWidthIn - parseFloat(margin.left) - parseFloat(margin.right)) * 96;
+  const availableHeightPx = (pageHeightIn - parseFloat(margin.top) - parseFloat(margin.bottom)) * 96;
+
+  const viewport = params.matchViewportToPage
+    ? { width: Math.round(contentWidthPx), height: 3000, deviceScaleFactor: 1 }
+    : DEFAULT_VIEWPORT;
+
+  const browser = await launchBrowser(viewport);
   try {
     const origin = new URL(params.url).origin;
     const logoDataUri = await fetchAsDataUri(`${origin}/logo/bgb-star.png`);
 
-    const page = await openAuthenticatedPage(browser, params.url, params.cookies);
+    const page = await openAuthenticatedPage(browser, params.url, params.cookies, params.waitForSelector);
+
+    let scale = 1;
+    if (params.fitHeightToOnePage) {
+      const naturalHeightPx = await page.evaluate(() => document.documentElement.scrollHeight);
+      if (naturalHeightPx > availableHeightPx) {
+        // A hair under the exact ratio — leaves a small safety margin so
+        // sub-pixel rounding during Chrome's own print layout pass can
+        // never push it back over by a line.
+        scale = Math.max(0.5, (availableHeightPx / naturalHeightPx) * 0.98);
+      }
+    }
+
     const pdf = await page.pdf({
       format: "letter",
+      landscape: params.landscape,
       printBackground: true,
       displayHeaderFooter: true,
       headerTemplate: "<span></span>",
       footerTemplate: buildFooterTemplate(logoDataUri),
-      margin: { top: "0.6in", bottom: "0.85in", left: "0.6in", right: "0.6in" },
+      margin,
+      scale,
     });
 
     return Buffer.from(pdf);

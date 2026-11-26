@@ -64,12 +64,19 @@ export default function TeamNeedsHeatmap({
               {sortedMembers.map((m) => {
                 const value = m.favorability[cluster];
                 return (
-                  <div key={m.userId} role="cell" className="p-1.5 border-t border-border/30 flex items-center justify-center">
+                  // Flush against its neighbors (no padding, no per-cell
+                  // border or radius) — a regular grid of thin gutters
+                  // between evenly-sized colored boxes is textbook Hermann
+                  // grid illusion territory (phantom dark dots at the
+                  // intersections); removing the gutters removes the
+                  // crossing-points the illusion depends on. Only a row
+                  // divider survives, not a column one.
+                  <div key={m.userId} role="cell" className="border-t border-border/30 flex items-center">
                     <div
                       aria-label={`${m.fullName} — ${CLUSTER_LABELS[cluster]}`}
                       onMouseEnter={() => setHovered({ userId: m.userId, cluster })}
                       style={{ backgroundColor: favorabilityToTeal(value) }}
-                      className="w-full h-10 rounded-md border border-border/40"
+                      className="w-full h-10"
                     />
                   </div>
                 );

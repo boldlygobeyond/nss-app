@@ -5,8 +5,11 @@ import { CLUSTER_LABELS, type ClusterKey } from "@/lib/nss/clusters";
 import { computeClusterAverages, groupByProximity, type TeamMemberScore } from "@/lib/nss/teamScores";
 import { useDismissOnOutsideOrEscape } from "@/lib/hooks/useDismissOnOutsideOrEscape";
 
-const DOT_SIZE = 14;
-const DOT_RADIUS = DOT_SIZE / 2;
+// Exported so NeedsSpectrumPrint (the static, label-annotated variant used
+// for the PDF snapshot — no hover available on a flat page) can share the
+// exact same positioning math rather than risking the two drifting apart.
+export const DOT_SIZE = 14;
+export const DOT_RADIUS = DOT_SIZE / 2;
 const ROW_TRACK_HEIGHT = 36;
 const DOT_TEAL = "#009FAB";
 const AVERAGE_NAVY = "#004850";
@@ -18,7 +21,7 @@ const AVERAGE_HASH_HEIGHT = DOT_SIZE + 18;
 // center — stays inside the track at any rendered width. Every row uses
 // this exact same formula with no per-zone sub-ranges, so all seven
 // spectra share identical left/right endpoints and one consistent scale.
-function centerExpr(value: number): string {
+export function centerExpr(value: number): string {
   const t = Math.max(0, Math.min(1, value));
   return `(${DOT_RADIUS}px + ${t} * (100% - ${DOT_SIZE}px))`;
 }
